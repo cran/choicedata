@@ -6,7 +6,7 @@
 \title{Define choice alternatives}
 \usage{
 choice_alternatives(
-  J = 2,
+  J = length(alternatives),
   alternatives = LETTERS[1:J],
   base = NULL,
   ordered = FALSE
@@ -25,8 +25,9 @@ Unique labels for the choice alternatives.}
 The name of the base alternative for alternative-constant covariates, see
 details.
 
-If \code{NULL} (default), it is set to the first element of the sorted
-\code{alternatives}.}
+If \code{NULL} (default), it is set to the first retained alternative. This is
+the first supplied alternative when \code{ordered = TRUE} and the first
+alphabetically sorted alternative otherwise.}
 
 \item{ordered}{[\code{logical(1)}]\cr
 Should the supplied order of \code{alternatives} be preserved and treated as an
@@ -37,7 +38,7 @@ When \code{TRUE}, the alternatives are kept in the given order.
 Otherwise, they are sorted alphabetically.}
 
 \item{x}{[\code{choice_alternatives}]\cr
-A \code{choice_alternatives} object.}
+A \code{\link{choice_alternatives}} object.}
 
 \item{...}{Currently not used.}
 }
@@ -64,10 +65,18 @@ printing a \code{choice_alternatives} object.
 }
 
 \examples{
+### unordered choice alternatives: heating
 choice_alternatives(
   J = 3,
   alternatives = c("gas", "electricity", "oil"),
   base = "gas"
+)
+
+### ordered choice alternatives: opinion
+choice_alternatives(
+  J = 4,
+  alternatives = c("very good", "good", "neither good nor bad", "bad"),
+  ordered = TRUE
 )
 }
 \keyword{model}

@@ -1,9 +1,13 @@
 test_that("choice_identifiers can be defined", {
+  skip_if_not_installed("mlogit")
+  data("Train", package = "mlogit")
+  skip_if_not_installed("AER")
+  data("TravelMode", package = "AER")
 
   ### long format
   expect_true(
     choice_identifiers(
-      data_frame = travel_mode_choice,
+      data_frame = TravelMode,
       format = "long",
       column_decider = "individual",
       column_occasion = NULL,
@@ -14,19 +18,19 @@ test_that("choice_identifiers can be defined", {
   ### wide format
   expect_true(
     choice_identifiers(
-      data_frame = train_choice,
+      data_frame = Train,
       format = "wide",
-      column_decider = "deciderID",
-      column_occasion = "occasionID",
+      column_decider = "id",
+      column_occasion = "choiceid",
       cross_section = FALSE
     ) |> is.choice_identifiers()
   )
   expect_true(
     choice_identifiers(
-      data_frame = train_choice,
+      data_frame = Train,
       format = "wide",
-      column_decider = "deciderID",
-      column_occasion = "occasionID",
+      column_decider = "id",
+      column_occasion = "choiceid",
       cross_section = TRUE
     ) |> is.choice_identifiers()
   )
@@ -51,7 +55,7 @@ test_that("checks for choice identifiers work", {
       data.frame("id" = c(1, NA, 3), "idc" = 1), column_decider = "id",
       column_occasion = "idc"
     ),
-    "must not have NAs"
+    "[Mm]ust not have NAs"
   )
   expect_error(
     choice_identifiers(
@@ -79,7 +83,7 @@ test_that("checks for choice identifiers work", {
       data.frame("id" = c(1, 2, 3), "idc" = c(1, NA, 1)), column_decider = "id",
       column_occasion = "idc"
     ),
-    "must not have NAs"
+    "[Mm]ust not have NAs"
   )
   expect_error(
     choice_identifiers(
@@ -205,11 +209,14 @@ test_that("Tp can be expanded", {
 
 test_that("Tp can be read", {
   choice_identifiers <- generate_choice_identifiers(N = 3, Tp = 1:3)
+  choice_identifiers <- choice_identifiers[c(2:4, 1, 5:6), ]
   expect_equal(
     read_Tp(choice_identifiers),
-    1:3
+    c(2L, 3L, 1L)
   )
-  choice_identifiers <- generate_choice_identifiers(N = 3, Tp = 2, column_occasion = NULL)
+  choice_identifiers <- generate_choice_identifiers(
+    N = 3, Tp = 2, column_occasion = NULL
+  )
   expect_equal(
     read_Tp(choice_identifiers),
     rep(1L, 6)
@@ -235,16 +242,22 @@ test_that("decider identifiers can be obtained", {
 })
 
 test_that("choice_identifiers can be extracted", {
+  skip_if_not_installed("mlogit")
+  data("Train", package = "mlogit")
+  skip_if_not_installed("AER")
+  data("TravelMode", package = "AER")
+  TravelMode$choice <- TravelMode$choice == "yes"
 
   ### wide choice_data (panel)
-  x <- choice_data(train_choice, column_occasion = "occasionID")
+  x <- choice_data(Train, column_decider = "id", column_occasion = "choiceid")
   expect_true(
     extract_choice_identifiers(x) |> is.choice_identifiers()
   )
 
   ### wide choice_data (cross-sectional)
   x <- choice_data(
-    train_choice, column_occasion = "occasionID", cross_section = TRUE
+    Train, column_decider = "id", column_occasion = "choiceid",
+    cross_section = TRUE
   )
   expect_true(
     extract_choice_identifiers(x) |> is.choice_identifiers()
@@ -252,7 +265,7 @@ test_that("choice_identifiers can be extracted", {
 
   ### long choice_data
   x <- choice_data(
-    data_frame = travel_mode_choice,
+    data_frame = TravelMode,
     format = "long",
     column_decider = "individual",
     column_alternative = "mode"
@@ -262,4 +275,3 @@ test_that("choice_identifiers can be extracted", {
   )
 
 })
-

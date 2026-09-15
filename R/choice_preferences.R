@@ -16,9 +16,10 @@
 #'
 #'
 #' @return
-#' An object of class `choice_preferences`, which is a `data.frame` with the
+#' An object of class `choice_preferences`, which is a `tibble` with the
 #' deciders' preferences. The column names are the names of the effects in the
-#' choice model. The first column contains the decider identifiers.
+#' choice model. The first column contains the decider identifiers, its name is
+#' stored in the attribute `column_decider`.
 #'
 #' @export
 #'
@@ -26,6 +27,7 @@
 #'
 #' @examples
 #' ### generate choice preferences from choice parameters and effects
+#' set.seed(1)
 #' choice_effects <- choice_effects(
 #'   choice_formula = choice_formula(
 #'     formula = choice ~ price | income | comfort,
@@ -33,29 +35,21 @@
 #'     random_effects = c(
 #'       "price" = "cn",
 #'       "income" = "cn"
-#'     )
+#'     ),
+#'     latent_class_effects = "price"
 #'   ),
 #'   choice_alternatives = choice_alternatives(J = 3)
 #' )
-#'
 #' choice_parameters <- generate_choice_parameters(
-#'   choice_effects = choice_effects
+#'   choice_effects = choice_effects, C = 2
 #' )
-#'
-#' ids <- generate_choice_identifiers(N = 4)
-#'
 #' (choice_preferences <- generate_choice_preferences(
 #'   choice_parameters = choice_parameters,
 #'   choice_effects = choice_effects,
-#'   choice_identifiers = ids
+#'   choice_identifiers = generate_choice_identifiers(N = 4)
 #' ))
-#'
-#' ### inspect decider-specific preference vectors
-#' head(choice_preferences)
 
-choice_preferences <- function(
-    data_frame, column_decider = colnames(data_frame)[1]
-  ) {
+choice_preferences <- function(data_frame, column_decider = "deciderID") {
 
   ### input checks
   check_not_missing(data_frame)
@@ -73,12 +67,12 @@ choice_preferences <- function(
   column_order <- c(
     column_decider, setdiff(colnames(data_frame), column_decider)
   )
-  data_frame <- data_frame[, column_order]
+  data_frame <- tibble::as_tibble(data_frame[, column_order, drop = FALSE])
 
   ### build 'choice_preferences' object
   structure(
     data_frame,
-    class = c("choice_preferences", "data.frame"),
+    class = tibble_class("choice_preferences", class(data_frame)),
     column_decider = column_decider
   )
 }
@@ -90,7 +84,7 @@ is.choice_preferences <- function(
     error = FALSE,
     var_name = oeli::variable_name(x)
   ) {
-  validate_choice_object(
+  check_choice_object(
     x = x,
     class_name = "choice_preferences",
     error = error,
@@ -113,15 +107,9 @@ is.choice_preferences <- function(
 
 generate_choice_preferences <- function(
     choice_effects,
-    choice_parameters = NULL,
+    choice_parameters = generate_choice_parameters(choice_effects),
     choice_identifiers = generate_choice_identifiers(N = 100)
   ) {
-
-  if (missing(choice_parameters)) {
-    choice_parameters <- generate_choice_parameters(
-      choice_effects = choice_effects
-    )
-  }
 
   ### input checks
   check_not_missing(choice_effects)
@@ -136,23 +124,57 @@ generate_choice_preferences <- function(
   Tp <- read_Tp(choice_identifiers)
   N <- length(Tp)
   P <- compute_P(choice_effects)
-  P_r <- compute_P_r(choice_effects)
 
   ### extract (unique) decider identifiers
   decider_identifiers <- get_decider_identifiers(choice_identifiers)
   column_decider <- attr(choice_identifiers, "column_decider")
 
-  preferences <- as.data.frame(matrix(NA_real_, nrow = N, ncol = P))
-  colnames(preferences) <- choice_effects[, "effect_name"]
-  re_position <- utils::tail(seq_len(P), P_r)
-  Omega_completed <- matrix(0, nrow = P, ncol = P)
-  Omega_completed[re_position, re_position] <- choice_parameters$Omega
-  for (n in seq_len(N)) {
-    preferences[n, ] <- oeli::rmvnorm(
-      mean = choice_parameters$beta,
-      Sigma = Omega_completed
-    )
+  beta <- choice_parameters$beta
+  weights <- choice_parameters$weights
+  C <- if (is.null(weights)) 1L else length(weights)
+  class <- if (C == 1L) {
+    rep(1L, N)
+  } else {
+    sample.int(C, size = N, replace = TRUE, prob = weights)
   }
+  beta <- if (C == 1L) list(beta) else beta
+  Omega <- if (C == 1L) {
+    list(choice_parameters$Omega)
+  } else {
+    choice_parameters$Omega
+  }
+  preferences <- matrix(NA_real_, nrow = N, ncol = P)
+  re_position <- which(!is.na(choice_effects$mixing))
+  mixing <- as.character(choice_effects$mixing[re_position])
+  if (P > 0L) {
+    for (c in seq_len(C)) {
+      index <- which(class == c)
+      if (!length(index)) next
+      preferences[index, ] <- matrix(
+        beta[[c]], nrow = length(index), ncol = P, byrow = TRUE
+      )
+      if (length(re_position)) {
+        latent <- oeli::rmvnorm(
+          n = length(index),
+          mean = beta[[c]][re_position],
+          Sigma = Omega[[c]]
+        )
+        latent <- matrix(
+          latent, nrow = length(index), ncol = length(re_position)
+        )
+        distribution <- random_effect_distribution(mixing)
+        latent[, distribution == "ln"] <- exp(
+          latent[, distribution == "ln", drop = FALSE]
+        )
+        latent[, distribution == "ln-"] <- -exp(
+          latent[, distribution == "ln-", drop = FALSE]
+        )
+        preferences[index, re_position] <- latent
+      }
+    }
+  }
+  preferences <- as.data.frame(preferences)
+  colnames(preferences) <- choice_effects[, "effect_name"]
 
   ### build 'choice_preferences' object
   data_frame <- cbind(decider_identifiers, preferences)
@@ -167,8 +189,7 @@ generate_choice_preferences <- function(
 #' @noRd
 
 split_choice_preferences <- function(
-    choice_preferences,
-    choice_identifiers = NULL
+    choice_preferences, choice_identifiers = NULL
   ) {
 
   ### input checks
@@ -212,4 +233,3 @@ split_choice_preferences <- function(
     }
   })
 }
-

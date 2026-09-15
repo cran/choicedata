@@ -11,7 +11,7 @@ choice_identifiers(
   format = "wide",
   column_decider = "deciderID",
   column_occasion = "occasionID",
-  cross_section = FALSE
+  cross_section = is.null(column_occasion)
 )
 
 generate_choice_identifiers(
@@ -58,12 +58,7 @@ The number of choice occasions per decider.
 Can also be of length \code{N} for a variable number of choice occasions per
 decider.}
 
-\item{x}{An object of class
-\itemize{
-\item \code{\link{choice_data}},
-\item \code{\link{choice_covariates}}, containing the identifiers and covariate
-values for each decider, occasion, and alternative,
-}}
+\item{x}{A \code{\link{choice_data}} or \code{\link{choice_covariates}} object.}
 }
 \value{
 An object of class \code{choice_identifiers}, which is a \code{tibble} with columns:
@@ -72,6 +67,9 @@ An object of class \code{choice_identifiers}, which is a \code{tibble} with colu
 \item \code{column_occasion} contains the choice occasion identifiers (only if
 \code{column_occasion} is not \code{NULL} and \code{cross_section = FALSE}).
 }
+
+The column names are stored in the attributes \code{column_decider} and
+\code{column_occasion}, the attribute \code{cross_section} records the data type.
 }
 \description{
 The \code{choice_identifiers} object defines identifiers for the deciders and
@@ -88,13 +86,16 @@ generate_choice_identifiers(N = 2, Tp = 2)
 ### cross-sectional case
 generate_choice_identifiers(N = 5, column_occasion = NULL)
 
+\dontshow{if (requireNamespace("AER", quietly = TRUE)) withAutoprint(\{ # examplesIf}
 ### read choice identifiers
+data("TravelMode", package = "AER")
 choice_identifiers(
-  data_frame = travel_mode_choice,
+  data_frame = TravelMode,
   format = "long",
   column_decider = "individual",
   column_occasion = NULL,
   cross_section = TRUE
 )
+\dontshow{\}) # examplesIf}
 }
 \keyword{data}

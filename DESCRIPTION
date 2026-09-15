@@ -1,7 +1,7 @@
 Package: choicedata
 Type: Package
 Title: Working with Choice Data
-Version: 0.1.0
+Version: 0.2.0
 Authors@R: 
     person("Lennart", "Oelschl\u00e4ger", 
            email = "oelschlaeger.lennart@gmail.com", 
@@ -12,23 +12,24 @@ Description: Offers a set of objects tailored to simplify working with choice
     likelihood of various types of choice models based on given data.
 License: GPL (>= 3)
 Encoding: UTF-8
+Language: en-US
 URL: https://github.com/loelschlaeger/choicedata,
-        http://loelschlaeger.de/choicedata/
+        https://loelschlaeger.de/choicedata/
 BugReports: https://github.com/loelschlaeger/choicedata/issues
-RoxygenNote: 7.3.3
-Suggests: mlogit, rmarkdown, testthat (>= 3.0.0)
+Suggests: AER, mlogit, mvtnorm, testthat (>= 3.0.0)
 Config/testthat/edition: 3
-Imports: checkmate, cli, dplyr, Formula, ggplot2, Matrix, mvtnorm,
-        optimizeR, oeli (>= 0.7.5), patchwork, Rdpack, rlang, tibble,
-        tidyr, utils
+Imports: checkmate, cli, dplyr, Formula, optimizeR (>= 1.2.1), oeli (>=
+        0.7.8), Rdpack, Rcpp, rlang, tibble, tidyr, utils
+LinkingTo: oeli (>= 0.7.8), Rcpp, RcppArmadillo
 RdMacros: Rdpack
 LazyData: true
 LazyDataCompression: xz
 Depends: R (>= 4.1.0)
-NeedsCompilation: no
-Packaged: 2025-10-06 08:08:22 UTC; Lennart Oelschläger
+RoxygenNote: 8.0.0
+NeedsCompilation: yes
+Packaged: 2026-09-15 11:42:30 UTC; loelschlaeger
 Author: Lennart Oelschläger [aut, cre] (ORCID:
     <https://orcid.org/0000-0001-5421-9313>)
 Maintainer: Lennart Oelschläger <oelschlaeger.lennart@gmail.com>
 Repository: CRAN
-Date/Publication: 2025-10-09 08:00:08 UTC
+Date/Publication: 2026-09-15 12:20:02 UTC

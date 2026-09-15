@@ -5,13 +5,19 @@
 \alias{print.choice_formula}
 \title{Define choice model formula}
 \usage{
-choice_formula(formula, error_term = "probit", random_effects = character())
+choice_formula(
+  formula,
+  error_term = "probit",
+  random_effects = character(),
+  latent_class_effects = character()
+)
 
 \method{print}{choice_formula}(x, ...)
 }
 \arguments{
 \item{formula}{[\code{formula}]\cr
-A symbolic description of the choice model, see details.}
+A symbolic description of the choice model, see the details on
+specifying the model formula.}
 
 \item{error_term}{[\code{character(1)}]\cr
 Defines the model's error term. Current options are:
@@ -21,21 +27,15 @@ Defines the model's error term. Current options are:
 }}
 
 \item{random_effects}{[\code{character()}]\cr
-Defines the random effects in the model. The expected format of elements in
-\code{random_effects} is \code{"<covariate>" = "<distribution>"}, where
-\code{"<covariate>"} is the name of a variable on the \code{formula} right-hand side.
-Every random effect must reference an explicit covariate (or \code{"ASC"} for
-alternative-specific constants) that appears in the supplied model formula.
+Named vector defining random effects, see the details on specifying
+random effects.}
 
-Current options for \code{"<distribution>"} are:
-\itemize{
-\item \code{"cn"}: correlated (with other \code{"cn"} random effects) normal distribution
-}
-
-To have random effects for the ASCs, use \code{"ASC"} for \code{"<covariate>"}.}
+\item{latent_class_effects}{[\code{character()}]\cr
+Names of covariates whose effects differ between latent classes, see the
+details on specifying latent class effects.}
 
 \item{x}{[\code{choice_formula}]\cr
-A \code{choice_formula} object.}
+A \code{\link{choice_formula}} object.}
 
 \item{...}{Currently not used.}
 }
@@ -48,6 +48,10 @@ An object of class \code{choice_formula}, which is a \code{list} of the elements
 \item{\code{covariate_types}}{The (up to) three different types of covariates.}
 \item{\code{ASC}}{Does the model have ASCs?}
 \item{\code{random_effects}}{The names of covariates with random effects.}
+\item{\code{latent_class_effects}}{The names of covariates with latent class
+effects.}
+\item{\code{xlevels}}{The factor levels of the covariates, added once the
+formula has been resolved with data in \code{\link{choice_effects}}.}
 }
 }
 \description{
@@ -75,8 +79,8 @@ constants, ASCs) are added to the model. They can be removed by adding
 \code{+ 0} in the second part, e.g., \code{choice ~ A | B + 0 | C}. To not include
 any covariates of the second type but to estimate ASCs, add \code{1} in the
 second part, e.g., \code{choice ~ A | 1 | C}. The expression
-\code{choice ~ A | 0 | C} is interpreted as no covariates of the second type and
-no ASCs.
+\code{choice ~ A | 0 | C} is interpreted as no covariates of the second type
+and no ASCs.
 \item To not include covariates of any type, add \code{0} in the respective
 part, e.g., \code{choice ~ 0 | B | C}.
 \item Some parts of the formula can be omitted when there is no ambiguity.
@@ -88,14 +92,47 @@ right-hand side are possible via the function \code{I()}, e.g.,
 \code{choice ~ I(A1^2 + A2 * 2)}. In this case, a random effect can be defined
 for the transformed covariate, e.g.,
 \code{random_effects = c("I(A1^2 + A2 * 2)" = "cn")}.
+\item Ordered choice models have a single utility per choice occasion.
+Their covariates must be placed in the first part and ASCs must be
+removed, e.g., \code{choice ~ age + income | 0}.
 }
 }
 
+\section{Specifying random effects}{
+
+Specify random effects as \code{"<covariate>" = "<distribution>"}. Each covariate
+must appear explicitly on the right-hand side of \code{formula}; use \code{"ASC"} for
+alternative-specific constants.
+
+Available distributions are:
+\itemize{
+\item \code{"cn"}: correlated normal
+\item \code{"n"}: uncorrelated normal
+\item \code{"cln"}: positively signed correlated log-normal
+\item \code{"ln"}: positively signed uncorrelated log-normal
+\item \code{"cln-"}: negatively signed correlated log-normal
+\item \code{"ln-"}: negatively signed uncorrelated log-normal
+}
+}
+
+\section{Specifying latent class effects}{
+
+The covariates in \code{latent_class_effects} have effects that differ between
+the latent classes of a mixture model; use \code{"ASC"} for alternative-specific
+constants. A random effect named here has a class-specific mean and
+covariance, any other effect a class-specific coefficient. Effects that
+are not named are the same in every class, and random effects with and
+without latent class effects are uncorrelated. A model with more than one
+latent class needs at least one latent class effect.
+}
+
 \examples{
+### specify a choice formula
 choice_formula(
   formula = choice ~ I(A^2 + 1) | B | I(log(C)),
   error_term = "probit",
-  random_effects = c("I(A^2+1)" = "cn", "B" = "cn")
+  random_effects = c("I(A^2+1)" = "cn", "B" = "cn"),
+  latent_class_effects = "B"
 )
 }
 \keyword{model}

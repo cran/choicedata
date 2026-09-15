@@ -30,7 +30,7 @@ Required to resolve data-dependent elements in \code{choice_formula} (if any).}
 The delimiter between covariate and alternative name.}
 
 \item{x}{[\code{choice_effects}]\cr
-The \code{choice_effects} object to be printed.}
+A \code{\link{choice_effects}} object.}
 
 \item{...}{Currently not used.}
 }
@@ -44,21 +44,28 @@ covariate and alternative name,
 \item \code{"covariate"}, the (transformed) covariate name connected to the effect,
 \item \code{"alternative"}, the alternative name connected to the effect (only
 if the effect is alternative-specific),
-\item \code{"as_covariate"}, indicator whether the covariate is alternative-specific,
+\item \code{"as_covariate"}, indicator whether the covariate is
+alternative-specific,
 \item \code{"as_effect"}, indicator whether the effect is alternative-specific,
 \item \code{"mixing"}, a factor with levels in the order
 \enumerate{
 \item \code{"cn"} (correlated normal distribution),
+\item \code{"cln"} (positively signed correlated log-normal distribution),
+\item \code{"cln-"} (negatively signed correlated log-normal distribution),
+\item \code{"n"} (uncorrelated normal distribution),
+\item \code{"ln"} (positively signed uncorrelated log-normal distribution),
+\item \code{"ln-"} (negatively signed uncorrelated log-normal distribution),
 }
 
-indicating the type of random effect.
+indicating the type of random effect,
+\item \code{"latent_class"}, indicator whether the effect differs between latent
+classes.
 }
 
-For identification, the choice effects are ordered according to the following
-rules:
+For identification, the choice effects are ordered according to the
+following rules:
 \enumerate{
 \item Non-random effects come before random effects.
-\item According to the ordering of the factor \code{mixing}.
 \item Otherwise, the order is determined by occurrence in \code{formula}.
 }
 
@@ -70,6 +77,7 @@ This function constructs an object of class \code{choice_effects}, which
 defines the effects of a choice model.
 }
 \examples{
+### construct choice effects
 choice_effects(
   choice_formula = choice_formula(
     formula = choice ~ price | income | I(comfort == 1),

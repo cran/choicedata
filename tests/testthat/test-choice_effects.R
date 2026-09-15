@@ -3,7 +3,7 @@ test_that("effect overview can be created", {
   ### test 1: MMNP with type-1 covariates only
   choice_formula <- choice_formula(
     formula = choice ~ cov,
-    random_effects = c("cov" = "cn", "ASC" = "cn")
+    random_effects = c("cov" = "cln", "ASC" = "cln-")
   )
   choice_alternatives <- choice_alternatives(
     J = 3,
@@ -24,10 +24,11 @@ test_that("effect overview can be created", {
         as_covariate = c(TRUE, FALSE, FALSE),
         as_effect = c(FALSE, TRUE, TRUE),
         mixing = structure(
-          c(1L, 1L, 1L),
-          levels = c("cn"),
+          c(2L, 3L, 3L),
+          levels = c("cn", "cln", "cln-", "n", "ln", "ln-"),
           class = c("ordered", "factor")
-        )
+        ),
+        latent_class = c(FALSE, FALSE, FALSE)
       ),
       row.names = c(NA, 3L),
       class = c("choice_effects", "data.frame"),
@@ -35,6 +36,28 @@ test_that("effect overview can be created", {
       choice_alternatives = choice_alternatives,
       delimiter = "_"
     )
+  )
+
+  effect_data <- choice_data(
+    data_frame = data.frame(
+      deciderID = rep(1:2, each = 3),
+      alternative = rep(c("A", "B", "C"), 2),
+      choice = c(1, 0, 0, 0, 1, 0),
+      cov = seq_len(6)
+    ),
+    format = "long",
+    column_decider = "deciderID",
+    column_alternative = "alternative",
+    column_as_covariates = "cov"
+  )
+  resolved <- choice_effects(
+    choice_formula = choice_formula,
+    choice_alternatives = choice_alternatives,
+    choice_data = effect_data
+  )
+  expect_equal(
+    as.character(resolved$mixing),
+    c("cln", "cln-", "cln-")
   )
 
   ### test 2: MNP with different types
@@ -61,9 +84,10 @@ test_that("effect overview can be created", {
         as_effect = c(FALSE, TRUE, TRUE, TRUE),
         mixing = structure(
           c(NA_integer_, NA_integer_, NA_integer_, NA_integer_),
-          levels = c("cn"),
+          levels = c("cn", "cln", "cln-", "n", "ln", "ln-"),
           class = c("ordered", "factor")
-        )
+        ),
+        latent_class = c(FALSE, FALSE, FALSE, FALSE)
       ),
       row.names = c(NA, -4L),
       class = c("choice_effects", "data.frame"),
@@ -108,6 +132,13 @@ test_that("misspecified effects can be detected", {
     is.choice_effects(1),
     "is bad"
   )
+  expect_error(
+    choice_effects(
+      choice_formula(choice ~ x_A | 0 | x),
+      choice_alternatives(J = 2)
+    ),
+    "effect names"
+  )
 })
 
 test_that("ordered alternatives restrict effect specification", {
@@ -118,7 +149,7 @@ test_that("ordered alternatives restrict effect specification", {
       ),
       choice_alternatives = choice_alternatives(J = 3, ordered = TRUE)
     ),
-    "Ordered choice models only support alternative-constant covariates."
+    "Ordered choice models only support covariates in the first part"
   )
   expect_s3_class(
     choice_effects(
@@ -132,22 +163,26 @@ test_that("ordered alternatives restrict effect specification", {
 })
 
 test_that("printing effects works", {
-  expect_snapshot(
-    choice_effects(
+  messages <- capture.output(
+    output <- capture.output(print(choice_effects(
       choice_formula = choice_formula(
         formula = choice ~ price | income | comfort,
         random_effects = c("price" = "cn", "income" = "cn")
       ),
       choice_alternatives = choice_alternatives(J = 3)
-    )
+    )), type = "output"),
+    type = "message"
   )
+  text <- paste(c(messages, output), collapse = "\n")
+  expect_match(text, "Choice effects", fixed = TRUE)
+  expect_match(text, "ASC_B", fixed = TRUE)
 })
 
 test_that("number of effects can be computed", {
   choice_effects <- choice_effects(
     choice_formula = choice_formula(
       formula = choice ~ A | B + 0 | C + D,
-      random_effects = c("A" = "cn", "D" = "cn")
+      random_effects = c("A" = "cn", "D" = "cln")
     ),
     choice_alternatives = choice_alternatives(
       J = 3
@@ -156,23 +191,31 @@ test_that("number of effects can be computed", {
   expect_equal(compute_P(choice_effects), 9)
   expect_equal(compute_P_d(choice_effects), 5)
   expect_equal(compute_P_r(choice_effects), 4)
+  expect_identical(
+    as.character(utils::tail(choice_effects$mixing, 4)),
+    c("cn", "cln", "cln", "cln")
+  )
 })
 
 test_that("effects can be created with resolving", {
+  skip_if_not_installed("mlogit")
+  data("Train", package = "mlogit")
+
   expect_identical(
     choice_effects(
       choice_formula = choice_formula(
-        form = choice ~ comfort
+        form = choice ~ factor(comfort)
       ),
       choice_alternatives = choice_alternatives(
         J = 2, alternatives = c("A", "B")
       ),
       choice_data = choice_data(
-        data_frame = train_choice,
+        data_frame = Train,
         format = "wide",
-        column_occasion = "occasionID"
+        column_decider = "id",
+        column_occasion = "choiceid"
       )
     )$effect_name,
-    c("comfort1", "comfort2", "ASC_B")
+    c("factor(comfort)1", "factor(comfort)2", "ASC_B")
   )
 })

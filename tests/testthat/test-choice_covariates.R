@@ -1,9 +1,13 @@
 test_that("choice_covariates can be defined", {
+  skip_if_not_installed("mlogit")
+  data("Train", package = "mlogit")
+  skip_if_not_installed("AER")
+  data("TravelMode", package = "AER")
 
   ### long format
   expect_true(
     choice_covariates(
-      data_frame = travel_mode_choice,
+      data_frame = TravelMode,
       format = "long",
       column_decider = "individual",
       column_occasion = NULL,
@@ -18,10 +22,10 @@ test_that("choice_covariates can be defined", {
   ### wide format
   expect_true(
     choice_covariates(
-      data_frame = train_choice,
+      data_frame = Train,
       format = "wide",
-      column_decider = "deciderID",
-      column_occasion = "occasionID",
+      column_decider = "id",
+      column_occasion = "choiceid",
       column_alternative = NULL,
       column_ac_covariates = NULL,
       column_as_covariates = NULL,
@@ -93,6 +97,11 @@ test_that("covariate names can be deduced from choice effects", {
 })
 
 test_that("design matrices can be build", {
+  skip_if_not_installed("mlogit")
+  data("Train", package = "mlogit")
+  skip_if_not_installed("AER")
+  data("TravelMode", package = "AER")
+  TravelMode$choice <- TravelMode$choice == "yes"
 
   ### simulation case
   choice_effects <- choice_effects(
@@ -109,14 +118,20 @@ test_that("design matrices can be build", {
     x = choice_covariates,
     choice_effects = choice_effects
   )
+  expect_length(design_matrices, 15)
+  expect_true(all(vapply(
+    design_matrices,
+    function(x) identical(dim(x), c(3L, nrow(choice_effects))),
+    logical(1)
+  )))
 
   ### empirical data case (wide)
   choice_data <- choice_data(
-    data_frame = train_choice,
+    data_frame = Train,
     format = "wide",
     column_choice = "choice",
-    column_decider = "deciderID",
-    column_occasion = "occasionID",
+    column_decider = "id",
+    column_occasion = "choiceid",
     column_alternative = NULL,
     column_ac_covariates = NULL,
     column_as_covariates = NULL,
@@ -129,11 +144,24 @@ test_that("design matrices can be build", {
     ),
     choice_alternatives = choice_alternatives(
       J = 2, alternatives = c("A", "B")
-    )
+    ),
+    choice_data = choice_data
   )
   design_matrices <- design_matrices(
     x = choice_data,
     choice_effects = choice_effects
+  )
+  expect_identical(
+    colnames(design_matrices[[1]]),
+    choice_effects$effect_name
+  )
+  unresolved_effects <- choice_effects(
+    choice_formula(choice ~ factor(comfort)),
+    attr(choice_effects, "choice_alternatives")
+  )
+  expect_error(
+    design_matrices(choice_data, unresolved_effects),
+    "recreate `choice_effects`"
   )
   choice_ids <- extract_choice_identifiers(choice_data)
   choice_indices <- extract_choice_indices(
@@ -149,7 +177,7 @@ test_that("design matrices can be build", {
 
   ### empirical data case (long)
   choice_data <- choice_data(
-    data_frame = travel_mode_choice,
+    data_frame = TravelMode,
     format = "long",
     column_choice = "choice",
     column_decider = "individual",
@@ -160,15 +188,67 @@ test_that("design matrices can be build", {
   )
   choice_effects <- choice_effects(
     choice_formula = choice_formula(
-      choice ~ cost | income + size | wait + travel
+      choice ~ vcost | income + size | wait + travel
     ),
     choice_alternatives = choice_alternatives(
-      J = 4, alternatives = c("bus", "car", "plane", "train")
+      J = 4, alternatives = c("air", "bus", "car", "train")
     )
   )
   design_matrices <- design_matrices(
     x = choice_data,
     choice_effects = choice_effects
   )
-})
+  expect_true(all(vapply(
+    design_matrices,
+    function(x) identical(dim(x), c(4L, nrow(choice_effects))),
+    logical(1)
+  )))
 
+  ### individual choice sets keep global design rows
+  choice_set_df <- data.frame(
+    deciderID = c(1, 1, 1, 2, 2),
+    alternative = c("A", "B", "C", "A", "C"),
+    choice = c(0L, 1L, 0L, NA, NA),
+    cost = c(1, 2, 3, 4, 5)
+  )
+  choice_set_data <- choice_data(
+    data_frame = choice_set_df,
+    format = "long",
+    column_choice = "choice",
+    column_decider = "deciderID",
+    column_alternative = "alternative",
+    column_as_covariates = "cost"
+  )
+  choice_set_effects <- choice_effects(
+    choice_formula = choice_formula(
+      choice ~ cost | 0 | 0,
+      error_term = "logit"
+    ),
+    choice_alternatives = choice_alternatives(
+      J = 3,
+      alternatives = c("A", "B", "C")
+    ),
+    choice_data = choice_set_data
+  )
+  choice_set_design <- design_matrices(
+    x = choice_set_data,
+    choice_effects = choice_set_effects
+  )
+  expect_true(all(vapply(
+    choice_set_design,
+    function(x) identical(dim(x), c(3L, nrow(choice_set_effects))),
+    logical(1)
+  )))
+  expect_identical(
+    attr(choice_set_design, "availability"),
+    list(1:3, c(1L, 3L))
+  )
+  expect_true(all(choice_set_design[[2]]["B", ] == 0))
+
+  choice_set_indices <- extract_choice_indices(
+    choice_data = choice_set_data,
+    choice_effects = choice_set_effects
+  )
+  expect_identical(choice_set_indices[[1]], 2L)
+  expect_identical(choice_set_indices[[2]], integer())
+})

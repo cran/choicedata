@@ -10,60 +10,82 @@ choice_likelihood(
   choice_effects,
   choice_identifiers = extract_choice_identifiers(choice_data),
   input_checks = TRUE,
-  lower_bound = 1e-10,
   ...
 )
 
 compute_choice_likelihood(
   choice_parameters,
-  choice_data,
-  choice_effects,
+  choice_likelihood,
   logarithm = TRUE,
   negative = FALSE,
-  lower_bound = 1e-10,
-  input_checks = TRUE,
+  aggregate = c("total", "decider", "occasion"),
   ...
 )
 }
 \arguments{
 \item{choice_data}{[\code{choice_data}]\cr
-A \code{\link{choice_data}} object with the observed choices.}
+A \code{\link{choice_data}} object.}
 
 \item{choice_effects}{[\code{choice_effects}]\cr
-A \code{\link{choice_effects}} object that determines the model effects.}
+A \code{\link{choice_effects}} object.}
 
 \item{choice_identifiers}{[\code{choice_identifiers}]\cr
-A \code{\link{choice_identifiers}} object. The default extracts identifiers
-from \code{choice_data}.}
+A \code{\link{choice_identifiers}} object.
+The default is extracted from \code{choice_data}.}
 
 \item{input_checks}{[\code{logical(1)}]\cr
-Forwarded to \code{\link{choiceprob_probit}} or
-\code{\link{choiceprob_logit}} to control additional input validation.}
+Check the pre-computed design matrices and choice indices against the
+parameters on the first likelihood evaluation? Later evaluations skip these
+checks because the pre-computed quantities do not change.}
 
-\item{lower_bound}{[\code{numeric(1)}]\cr
-The minimum probability used when computing the log-likelihood. Values below
-this bound are truncated to avoid taking the logarithm of zero.}
+\item{...}{Additional arguments for the probability computation:
+\itemize{
+\item \code{n_draws} [\code{integer(1)}]: The number of draws for simulated
+probabilities, which are required for mixed logit models and for mixed
+probit models with non-normal random effects. The default is \code{200}.
+\item \code{draws} [\code{matrix}]: A matrix of standard normal draws with one column
+per random effect that replaces the generated draws.
+\item \code{cml} [\code{character(1)}]: Composite marginal likelihood for panel probit
+models. Either \code{"no"} (default, the full likelihood), \code{"fp"} (all pairs of
+choice occasions), or \code{"ap"} (adjacent pairs of choice occasions).
+\item \code{ghk_draws} [\code{integer(1)}]: The number of draws of the GHK simulator
+for multivariate normal probabilities in probit models, see
+\code{\link[oeli]{pmvnorm}}. Probabilities of up to three dimensions are
+computed exactly; higher dimensions use the GHK simulator on a fixed
+sequence of quasi-random Halton points. The default is \code{500}.
+}}
 
-\item{...}{Additional arguments passed to \code{\link{choiceprob_probit}} or
-\code{\link{choiceprob_logit}}.}
+\item{choice_parameters}{[\code{choice_parameters} | \code{numeric()} | \code{list()}]\cr
+A \code{\link{choice_parameters}} object.
 
-\item{choice_parameters}{[\code{choice_parameters} | \code{list}]\cr
-A \code{\link{choice_parameters}} object or a list as returned by
-\code{\link{switch_parameter_space}}. When a numeric vector in optimization
-space is supplied, it is converted via \code{switch_parameter_space()}.}
+A numeric vector in optimization space is also accepted and converted with
+\code{switch_parameter_space()}.
+
+A list of either representation is evaluated as a batch of parameter draws.}
+
+\item{choice_likelihood}{[\code{choice_likelihood}]\cr
+A \code{\link{choice_likelihood}} object.}
 
 \item{logarithm}{[\code{logical(1)}]\cr
 Return the log-likelihood? If \code{FALSE}, the likelihood is returned.}
 
 \item{negative}{[\code{logical(1)}]\cr
 Return the negative (log-)likelihood? Useful for minimization routines.}
+
+\item{aggregate}{[\code{character(1)}]\cr
+Unit of the returned likelihood:
+\itemize{
+\item \code{"occasion"} returns one contribution per observed choice occasion,
+\item \code{"decider"} returns one joint contribution per decider,
+\item \code{"total"} sums the decider contributions.
+}}
 }
 \value{
 \code{choice_likelihood()} returns an object of class \code{choice_likelihood}, which
-is a \code{list} containing the design matrices, the choice indices, and the
-identifiers. \code{compute_choice_likelihood()} returns a single numeric value
-with the (negative) log-likelihood or likelihood, depending on \code{logarithm}
-and \code{negative}.
+is a \code{list} containing the design matrices, choice indices, and identifiers.
+
+\code{compute_choice_likelihood()} returns a numeric scalar for
+\code{aggregate = "total"} and a named numeric vector otherwise.
 }
 \description{
 These functions prepare and evaluate the likelihood contribution of observed
@@ -74,12 +96,13 @@ implied by \code{choice_data} and \code{choice_effects}. The returned object sto
 these quantities so that repeated likelihood evaluations during maximum
 likelihood estimation avoid redundant work.
 \item \code{compute_choice_likelihood()} evaluates the (log-)likelihood for given
-\code{choice_parameters}. It can either take the original choice objects or a
-pre-computed \code{choice_likelihood} object.
+\code{choice_parameters} and a pre-computed \code{choice_likelihood} object.
 }
 }
 \examples{
-data(train_choice)
+\dontshow{if (requireNamespace("mlogit", quietly = TRUE)) withAutoprint(\{ # examplesIf}
+### compute choice likelihood
+data("Train", package = "mlogit")
 
 choice_effects <- choice_effects(
   choice_formula = choice_formula(
@@ -87,16 +110,17 @@ choice_effects <- choice_effects(
     error_term = "probit"
   ),
   choice_alternatives = choice_alternatives(
-    J = 2, alternatives = c("A", "B")
+    J = 2,
+    alternatives = c("A", "B")
   )
 )
 
 choice_data <- choice_data(
-  data_frame = train_choice,
+  data_frame = Train,
   format = "wide",
   column_choice = "choice",
-  column_decider = "deciderID",
-  column_occasion = "occasionID"
+  column_decider = "id",
+  column_occasion = "choiceid"
 )
 
 likelihood <- choice_likelihood(
@@ -104,13 +128,15 @@ likelihood <- choice_likelihood(
   choice_effects = choice_effects
 )
 
-choice_parameters <- generate_choice_parameters(choice_effects)
+choice_parameters <- generate_choice_parameters(
+  choice_effects = choice_effects
+)
 
 compute_choice_likelihood(
   choice_parameters = choice_parameters,
-  choice_data = likelihood,
-  choice_effects = choice_effects,
+  choice_likelihood = likelihood,
   logarithm = TRUE
 )
+\dontshow{\}) # examplesIf}
 }
 \keyword{probability}

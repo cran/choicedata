@@ -15,11 +15,19 @@ coverage](https://codecov.io/gh/loelschlaeger/choicedata/graph/badge.svg)](https
 The `{choicedata}` package simplifies working with choice data in
 [R](https://www.r-project.org/).
 
+## Installation
+
+Install the released version from
+[CRAN](https://CRAN.R-project.org/package=choicedata):
+
+``` r
+install.packages("choicedata")
+```
+
 ## Package design
 
-The package breaks down the process of modeling choice data into a
-series of steps. Each step is represented by an object that contains the
-necessary information for the subsequent step.
+The package breaks choice-data modeling into a series of objects. Each
+object contains the information needed for the next step.
 
 ![](man/figures/choicedata_flowchart.png)
 
@@ -41,7 +49,8 @@ necessary information for the subsequent step.
   the identifiers for deciders and choice occasions.
 
 - [`choice_preferences`](https://loelschlaeger.de/choicedata/reference/choice_preferences.html):
-  the deciders’ choice preferences, identified by `choice_identifiers`.
+  the choice preferences of the deciders, identified by
+  `choice_identifiers`.
 
 - [`choice_responses`](https://loelschlaeger.de/choicedata/reference/choice_responses.html):
   the choice responses, influenced by `choice_preferences`.
@@ -66,99 +75,98 @@ ways to create a range of modeling workflows.
 
 ### Empirical data
 
-The `travel_mode_choice` data set contains the revealed preferences of
-210 travelers choosing between plane, train, bus, and car. We can
-transform the data from long to wide format, or construct model design
-matrices:
+The `TravelMode` data set of the
+[**AER**](https://CRAN.R-project.org/package=AER) package ([Kleiber and
+Zeileis 2008](#ref-Kleiber2008)) contains the revealed preferences of
+210 travelers choosing between air, train, bus, and car:
 
 ``` r
 library("choicedata")
+data("TravelMode", package = "AER")
+TravelMode$choice <- TravelMode$choice == "yes"
+head(TravelMode)
+#>   individual  mode choice wait vcost travel gcost income size
+#> 1          1   air  FALSE   69    59    100    70     35    1
+#> 2          1 train  FALSE   34    31    372    71     35    1
+#> 3          1   bus  FALSE   35    25    417    70     35    1
+#> 4          1   car   TRUE    0    10    180    30     35    1
+#> 5          2   air  FALSE   64    58     68    68     30    2
+#> 6          2 train  FALSE   44    31    354    84     30    2
+```
 
-travel_mode_choice
-#> # A tibble: 840 × 8
-#>    individual mode  choice  wait  cost travel income  size
-#>         <int> <chr>  <int> <int> <int>  <int>  <int> <int>
-#>  1          1 plane      0    69    59    100     35     1
-#>  2          1 train      0    34    31    372     35     1
-#>  3          1 bus        0    35    25    417     35     1
-#>  4          1 car        1     0    10    180     35     1
-#>  5          2 plane      0    64    58     68     30     2
-#>  6          2 train      0    44    31    354     30     2
-#>  7          2 bus        0    53    25    399     30     2
-#>  8          2 car        1     0    11    255     30     2
-#>  9          3 plane      0    69   115    125     40     1
-#> 10          3 train      0    34    98    892     40     1
-#> # ℹ 830 more rows
+We can transform the data from long (one row per choice alternative) to
+wide format (one row per choice occasion):
 
+``` r
 long_to_wide(
-  data_frame = travel_mode_choice,
+  data_frame = TravelMode,
   column_alternative = "mode",
   column_decider = "individual"
 )
-#> # A tibble: 210 × 16
-#>    individual income  size wait_plane wait_train wait_bus wait_car cost_plane
-#>         <int>  <int> <int>      <int>      <int>    <int>    <int>      <int>
-#>  1          1     35     1         69         34       35        0         59
-#>  2          2     30     2         64         44       53        0         58
-#>  3          3     40     1         69         34       35        0        115
-#>  4          4     70     3         64         44       53        0         49
-#>  5          5     45     2         64         44       53        0         60
-#>  6          6     20     1         69         40       35        0         59
-#>  7          7     45     1         45         34       35        0        148
-#>  8          8     12     1         69         34       35        0        121
-#>  9          9     40     1         69         34       35        0         59
-#> 10         10     70     2         69         34       35        0         58
+#> # A tibble: 210 × 20
+#>    individual income  size wait_air wait_train wait_bus wait_car vcost_air
+#>    <fct>       <int> <int>    <int>      <int>    <int>    <int>     <int>
+#>  1 1              35     1       69         34       35        0        59
+#>  2 2              30     2       64         44       53        0        58
+#>  3 3              40     1       69         34       35        0       115
+#>  4 4              70     3       64         44       53        0        49
+#>  5 5              45     2       64         44       53        0        60
+#>  6 6              20     1       69         40       35        0        59
+#>  7 7              45     1       45         34       35        0       148
+#>  8 8              12     1       69         34       35        0       121
+#>  9 9              40     1       69         34       35        0        59
+#> 10 10             70     2       69         34       35        0        58
 #> # ℹ 200 more rows
-#> # ℹ 8 more variables: cost_train <int>, cost_bus <int>, cost_car <int>,
-#> #   travel_plane <int>, travel_train <int>, travel_bus <int>, travel_car <int>,
-#> #   choice <chr>
+#> # ℹ 12 more variables: vcost_train <int>, vcost_bus <int>, vcost_car <int>,
+#> #   travel_air <int>, travel_train <int>, travel_bus <int>, travel_car <int>,
+#> #   gcost_air <int>, gcost_train <int>, gcost_bus <int>, gcost_car <int>,
+#> #   choice <fct>
+```
 
-mode_effects <- choice_effects(
-  choice_formula = choice_formula(
-    formula = choice ~ cost | income + size | travel + wait,
-    error_term = "probit"
-  ),
-  choice_alternatives = choice_alternatives(
-    J = 4,
-    alternatives = unique(travel_mode_choice$mode)
-  )
-)
+We can construct model design matrices:
 
+``` r
 mode_data <- choice_data(
-  data_frame = travel_mode_choice,
+  data_frame = TravelMode,
   format = "long",
   column_choice = "choice",
   column_decider = "individual",
   column_alternative = "mode",
   column_ac_covariates = c("income", "size"),
-  column_as_covariates = c("wait", "cost", "travel")
+  column_as_covariates = c("wait", "vcost", "travel", "gcost")
 )
 
-design_matrices <- design_matrices(mode_data, mode_effects)
-design_matrices[[1]]
-#>       cost income_car income_plane income_train size_car size_plane size_train
-#> bus     25          0            0            0        0          0          0
-#> car     10         35            0            0        1          0          0
-#> plane   59          0           35            0        0          1          0
-#> train   31          0            0           35        0          0          1
-#>       ASC_car ASC_plane ASC_train travel_bus travel_car travel_plane
-#> bus         0         0         0        417          0            0
-#> car         1         0         0          0        180            0
-#> plane       0         1         0          0          0          100
-#> train       0         0         1          0          0            0
-#>       travel_train wait_bus wait_car wait_plane wait_train
-#> bus              0       35        0          0          0
-#> car              0        0        0          0          0
-#> plane            0        0        0         69          0
-#> train          372        0        0          0         34
+mode_effects <- choice_effects(
+  choice_formula = choice_formula(
+    formula = choice ~ vcost | income | wait,
+    error_term = "probit"
+  ),
+  choice_alternatives = choice_alternatives(
+    alternatives = levels(TravelMode$mode)
+  ),
+  choice_data = mode_data
+)
+
+mode_design <- design_matrices(mode_data, mode_effects)
+mode_design[[1]] |> round()
+#>       vcost income_bus income_car income_train ASC_bus ASC_car ASC_train
+#> air      59          0          0            0       0       0         0
+#> bus      25         35          0            0       1       0         0
+#> car      10          0         35            0       0       1         0
+#> train    31          0          0           35       0       0         1
+#>       wait_air wait_bus wait_car wait_train
+#> air         69        0        0          0
+#> bus          0       35        0          0
+#> car          0        0        0          0
+#> train        0        0        0         34
 ```
 
 ### Simulated choice
 
 `generate_choice_data()` makes it straightforward to simulate choice
 data. The example below simulates 200 ranking tasks with three
-alternatives and recovers the data-generating parameters via numerical
-optimization of the likelihood:
+alternatives and recovers the data-generating parameters by optimizing
+the likelihood:
 
 ``` r
 library("choicedata")
@@ -167,7 +175,7 @@ set.seed(1)
 
 sim_effects <- choice_effects(
   choice_formula = choice_formula(
-    formula = choice ~ A | B | C,
+    formula = choice ~ x | y + 0 | z,
     error_term = "logit"
   ),
   choice_alternatives = choice_alternatives(
@@ -185,27 +193,26 @@ sim_parameters <- generate_choice_parameters(sim_effects)
   choice_type = "ranked"
 ))
 #> # A tibble: 200 × 13
-#>    deciderID occasionID choice        B choice_A choice_B choice_C     A_A
-#>  * <chr>     <chr>      <chr>     <dbl>    <int>    <int>    <int>   <dbl>
-#>  1 1         1          B       1.12           2        1        3  0.576 
-#>  2 2         1          B       0.782          3        1        2 -0.0449
-#>  3 3         1          B      -0.478          2        1        3  0.0746
-#>  4 4         1          B      -0.415          3        1        2  0.418 
-#>  5 5         1          B       0.697          2        1        3 -0.394 
-#>  6 6         1          B       0.881          2        1        3  0.557 
-#>  7 7         1          B      -0.367          3        1        2  0.398 
-#>  8 8         1          B       0.0280         3        1        2 -1.04  
-#>  9 9         1          C       0.476          3        2        1 -0.743 
-#> 10 10        1          B       0.00111        2        1        3 -0.710 
+#>    deciderID occasionID choice       y    x_A     x_B     x_C     z_A    z_B
+#>  * <chr>     <chr>      <chr>    <dbl>  <dbl>   <dbl>   <dbl>   <dbl>  <dbl>
+#>  1 1         1          B      -0.621   0.487  0.738   0.576  -0.305   1.51 
+#>  2 2         1          A       0.594  -2.21   1.12   -0.0449 -0.0162  0.944
+#>  3 3         1          C      -0.156   0.919  0.782   0.0746 -1.99    0.620
+#>  4 4         1          A      -0.0538 -1.47  -0.478   0.418   1.36   -0.103
+#>  5 5         1          B      -0.165  -1.38  -0.415  -0.394  -0.0593  1.10 
+#>  6 6         1          A       0.769  -0.253  0.697   0.557  -0.689  -0.707
+#>  7 7         1          B       1.43   -0.112  0.881   0.398  -0.612   0.341
+#>  8 8         1          B      -0.0392  1.98  -0.367  -1.04    0.570  -0.135
+#>  9 9         1          A       0.153   0.690  0.0280 -0.743   0.189  -1.80 
+#> 10 10        1          C       0.291   2.17   0.476  -0.710   0.611  -0.934
 #> # ℹ 190 more rows
-#> # ℹ 5 more variables: A_B <dbl>, A_C <dbl>, C_A <dbl>, C_B <dbl>, C_C <dbl>
+#> # ℹ 4 more variables: z_C <dbl>, choice_A <int>, choice_B <int>, choice_C <int>
 
 sim_likelihood <- choice_likelihood(
   choice_data = sim_data,
   choice_effects = sim_effects
 )
 
-objective <- sim_likelihood$objective
 true_vector <- switch_parameter_space(
   choice_parameters = sim_parameters,
   choice_effects = sim_effects
@@ -214,7 +221,12 @@ true_vector <- switch_parameter_space(
 fit <- stats::optim(
   par = stats::rnorm(length(true_vector)),
   fn = function(par) {
-    objective(choice_parameters = par, logarithm = TRUE, negative = TRUE)
+    compute_choice_likelihood(
+      choice_parameters = par,
+      choice_likelihood = sim_likelihood,
+      logarithm = TRUE,
+      negative = TRUE
+    )
   }
 )
 
@@ -223,25 +235,14 @@ estimated_parameters <- switch_parameter_space(
   choice_effects = sim_effects
 )
 
-data.frame(dgp = true_vector, estimated = fit$par)
-#>               dgp   estimated
-#> beta_1 -1.9810209 -2.04179163
-#> beta_2  0.5807312  0.04789289
-#> beta_3 -2.6424897 -3.05406623
-#> beta_4  5.0447208  4.82873952
-#> beta_5  1.0419951  0.99061141
-#> beta_6 -2.5945488 -2.75745549
-#> beta_7  1.5413860  1.21554512
-#> beta_8  2.3347877  1.96729481
-```
-
-## Installation
-
-You can install the released package version from
-[CRAN](https://CRAN.R-project.org) with:
-
-``` r
-install.packages("choicedata")
+data.frame(dgp = true_vector, estimated = fit$par) |> round(2)
+#>          dgp estimated
+#> beta_1 -1.98     -2.36
+#> beta_2  0.58      0.53
+#> beta_3 -2.64     -2.83
+#> beta_4  5.04      5.64
+#> beta_5  1.04      1.18
+#> beta_6 -2.59     -3.03
 ```
 
 ## Related work
@@ -255,20 +256,26 @@ provides Bayesian tools for estimating probit models.
 
 ## Contact
 
-You have a question, found a bug, request a feature, want to give
-feedback, or like to contribute? [Please file an issue on
+You have a question, found a bug, or want to contribute? Please [file an
+issue on
 GitHub](https://github.com/loelschlaeger/choicedata/issues/new/choose).
 
 ## References
 
-<div id="refs" class="references csl-bib-body hanging-indent"
-entry-spacing="0">
+<div id="refs" class="references csl-bib-body hanging-indent">
 
 <div id="ref-Bauer2023" class="csl-entry">
 
 Bauer, D., M. Batram, S. Büscher, and L. Oelschläger. 2023. *Rprobit:
 Estimation of Multinomial Probit Models*.
 <https://github.com/dbauer72/Rprobit>.
+
+</div>
+
+<div id="ref-Kleiber2008" class="csl-entry">
+
+Kleiber, Christian, and Achim Zeileis. 2008. *Applied Econometrics with
+R*. Springer. <https://doi.org/10.1007/978-0-387-77318-6>.
 
 </div>
 

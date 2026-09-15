@@ -13,8 +13,9 @@
 #' The name of the base alternative for alternative-constant covariates, see
 #' details.
 #'
-#' If `NULL` (default), it is set to the first element of the sorted
-#' `alternatives`.
+#' If `NULL` (default), it is set to the first retained alternative. This is
+#' the first supplied alternative when `ordered = TRUE` and the first
+#' alphabetically sorted alternative otherwise.
 #'
 #' @param ordered \[`logical(1)`\]\cr
 #' Should the supplied order of `alternatives` be preserved and treated as an
@@ -46,25 +47,34 @@
 #' @keywords model
 #'
 #' @examples
+#' ### unordered choice alternatives: heating
 #' choice_alternatives(
 #'   J = 3,
 #'   alternatives = c("gas", "electricity", "oil"),
 #'   base = "gas"
 #' )
+#'
+#' ### ordered choice alternatives: opinion
+#' choice_alternatives(
+#'   J = 4,
+#'   alternatives = c("very good", "good", "neither good nor bad", "bad"),
+#'   ordered = TRUE
+#' )
 
 choice_alternatives <- function(
-  J = 2,
+  J = length(alternatives),
   alternatives = LETTERS[1:J],
   base = NULL,
   ordered = FALSE
 ) {
 
   ### input checks
+  if (missing(J) && missing(alternatives)) J <- 2L
   ordered <- check_ordered(ordered)
   alternatives <- check_alternatives(alternatives = alternatives, J = J)
   if (!isTRUE(ordered)) alternatives <- sort(alternatives)
   if (is.null(base)) base <- alternatives[1]
-  check_base(base = base, alternatives = alternatives, J = J)
+  check_base(base = base, alternatives = alternatives)
 
   ### build object
   structure(
@@ -83,7 +93,7 @@ is.choice_alternatives <- function(
   error = FALSE,
   var_name = oeli::variable_name(x)
 ) {
-  validate_choice_object(
+  check_choice_object(
     x = x,
     class_name = "choice_alternatives",
     error = error,
@@ -94,7 +104,7 @@ is.choice_alternatives <- function(
 #' @rdname choice_alternatives
 #'
 #' @param x \[`choice_alternatives`\]\cr
-#' A `choice_alternatives` object.
+#' A \code{\link{choice_alternatives}} object.
 #'
 #' @param ... Currently not used.
 #'
@@ -103,7 +113,11 @@ is.choice_alternatives <- function(
 print.choice_alternatives <- function(x, ...) {
   is.choice_alternatives(x, error = TRUE)
   base <- attr(x, "base")
-  cli::cli_h3("Choice alternatives")
+  if (isTRUE(attr(x, "ordered"))) {
+    cli::cli_h3("Choice alternatives (ordered)")
+  } else {
+    cli::cli_h3("Choice alternatives")
+  }
   alt <- as.character(x)
   alt[alt == base] <- paste0(alt[alt == base], "*")
   cli::cat_bullet(alt)

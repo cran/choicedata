@@ -33,6 +33,9 @@
 #' 2. `column_occasion` contains the choice occasion identifiers (only if
 #'    `column_occasion` is not `NULL` and `cross_section = FALSE`).
 #'
+#' The column names are stored in the attributes `column_decider` and
+#' `column_occasion`, the attribute `cross_section` records the data type.
+#'
 #' @export
 #'
 #' @keywords data
@@ -44,9 +47,11 @@
 #' ### cross-sectional case
 #' generate_choice_identifiers(N = 5, column_occasion = NULL)
 #'
+#' @examplesIf requireNamespace("AER", quietly = TRUE)
 #' ### read choice identifiers
+#' data("TravelMode", package = "AER")
 #' choice_identifiers(
-#'   data_frame = travel_mode_choice,
+#'   data_frame = TravelMode,
 #'   format = "long",
 #'   column_decider = "individual",
 #'   column_occasion = NULL,
@@ -58,7 +63,7 @@ choice_identifiers <- function(
   format = "wide",
   column_decider = "deciderID",
   column_occasion = "occasionID",
-  cross_section = FALSE
+  cross_section = is.null(column_occasion)
 ) {
 
   ### input checks
@@ -80,12 +85,12 @@ choice_identifiers <- function(
 
   ### identifier checks
   decider_identifiers <- as.character(ids_df[[column_decider]])
-  if (anyNA(decider_identifiers)) {
-    cli::cli_abort(
-      "Column {.val {column_decider}} of {.var data_frame} must not have NAs",
-      call = NULL
-    )
-  }
+  oeli::input_check_response(
+    check = checkmate::check_character(
+      decider_identifiers, min.chars = 1, any.missing = FALSE
+    ),
+    var_name = column_decider
+  )
 
   if (is.null(column_occasion)) {
     ### ensure uniqueness after collapsing
@@ -100,23 +105,23 @@ choice_identifiers <- function(
     column_occasion <- "occasionID"
   } else {
     occasion_identifiers <- as.character(ids_df[[column_occasion]])
-    if (anyNA(occasion_identifiers)) {
+    oeli::input_check_response(
+      check = checkmate::check_character(
+        occasion_identifiers, min.chars = 1, any.missing = FALSE
+      ),
+      var_name = column_occasion
+    )
+    duplicated_pairs <- duplicated(
+      paste(decider_identifiers, occasion_identifiers, sep = "\r")
+    )
+    if (any(duplicated_pairs)) {
+      decider_identifier <- decider_identifiers[which(duplicated_pairs)[1L]]
       cli::cli_abort(
-        "Column {.val {column_occasion}} of {.var data_frame} must not have
-        NAs",
+        "Column {.val {column_occasion}} of {.var data_frame} must have unique
+        values for any decider, but decider {.val {decider_identifier}} has
+        duplicates",
         call = NULL
       )
-    }
-    for (decider_identifier in unique(decider_identifiers)) {
-      ids <- which(decider_identifiers == decider_identifier)
-      if (anyDuplicated(occasion_identifiers[ids])) {
-        cli::cli_abort(
-          "Column {.val {column_occasion}} of {.var data_frame} must have unique
-          values for any decider, but decider {.val {decider_identifier}} has
-          duplicates",
-          call = NULL
-        )
-      }
     }
   }
 
@@ -153,7 +158,7 @@ is.choice_identifiers <- function(
   error = FALSE,
   var_name = oeli::variable_name(x)
 ) {
-  validate_choice_object(
+  check_choice_object(
     x = x,
     class_name = "choice_identifiers",
     error = error,
@@ -264,12 +269,9 @@ expand_Tp <- function(N = length(Tp), Tp = 1) {
   check_not_missing(N)
   N <- check_N(N)
   Tp <- check_Tp(Tp, N = N)
-  checkmate::assert_int(N, lower = 1)
-  checkmate::assert_numeric(Tp)
   if (length(Tp) == 1) {
     Tp <- rep(Tp, N)
   }
-  checkmate::assert_integerish(Tp, lower = 1, len = N, any.missing = FALSE)
   as.integer(Tp)
 }
 
@@ -280,8 +282,7 @@ expand_Tp <- function(N = length(Tp), Tp = 1) {
 #' \code{\link{choice_identifiers}} object.
 #'
 #' @param choice_identifiers \[`choice_identifiers`\]\cr
-#' The \code{\link{choice_identifiers}} object that defines the choice
-#' occasions.
+#' A \code{\link{choice_identifiers}} object.
 #'
 #' @return
 #' An \code{integer} \code{vector} of length \code{N}, where \code{N} is the
@@ -300,7 +301,8 @@ read_Tp <- function(choice_identifiers) {
   if (is.null(column_occasion)) {
     rep(1L, times = nrow(choice_identifiers))
   } else {
-    as.integer(table(choice_identifiers[, column_decider]))
+    decider_ids <- choice_identifiers[[column_decider]]
+    tabulate(match(decider_ids, unique(decider_ids)))
   }
 }
 
@@ -327,11 +329,17 @@ get_position_from_identifier <- function(
   N = length(Tp), Tp = 1, decider_number, occasion_number
 ) {
   Tp <- expand_Tp(N = N, Tp = Tp)
-  checkmate::assert_integerish(
-    decider_number, lower = 1, upper = N
+  oeli::input_check_response(
+    check = checkmate::check_integerish(
+      decider_number, lower = 1, upper = N
+    ),
+    var_name = "decider_number"
   )
-  checkmate::assert_integerish(
-    occasion_number, lower = 1, upper = Tp[decider_number]
+  oeli::input_check_response(
+    check = checkmate::check_integerish(
+      occasion_number, lower = 1, upper = Tp[decider_number]
+    ),
+    var_name = "occasion_number"
   )
   as.integer(c(0, cumsum(Tp))[decider_number] + occasion_number)
 }
@@ -359,11 +367,7 @@ get_decider_identifiers <- function(choice_identifiers) {
 #' @rdname choice_identifiers
 #'
 #' @param x
-#' An object of class
-#'
-#' * \code{\link{choice_data}},
-#' * \code{\link{choice_covariates}}, containing the identifiers and covariate
-#'   values for each decider, occasion, and alternative,
+#' A \code{\link{choice_data}} or \code{\link{choice_covariates}} object.
 #'
 #' @export
 
@@ -374,7 +378,7 @@ extract_choice_identifiers <- function(
   column_occasion = attr(x, "column_occasion"),
   cross_section = attr(x, "cross_section")
 ) {
-  validate_choice_class_union(
+  check_choice_class_union(
     x = x,
     class_names = c("choice_data", "choice_covariates"),
     var_name = "x"

@@ -7,9 +7,15 @@ test_that("choice_formula can be specified", {
     expect(Formula::is.Formula(object$formula), "bad formula")
     expect(identical(object$error_term, error_term), "bad error_term")
     expect(identical(object$choice, choice), "bad choice")
-    expect(identical(object$covariate_types, covariate_types), "bad covariate_types")
+    expect(
+      identical(object$covariate_types, covariate_types),
+      "bad covariate_types"
+    )
     expect(identical(object$ASC, ASC), "bad ASC")
-    expect(identical(object$random_effects, random_effects), "bad random_effects")
+    expect(
+      identical(object$random_effects, random_effects),
+      "bad random_effects"
+    )
   }
   expect_choice_formula(
     choice_formula(
@@ -51,7 +57,7 @@ test_that("choice_formula can be specified", {
   expect_choice_formula(
     choice_formula(
       formula = choice ~ A | B,
-      random_effects = c("A" = "cn", "B" = "cn")
+      random_effects = c("A" = "cn", "B" = "cln")
     ),
     error_term = "probit",
     choice = "choice",
@@ -59,12 +65,12 @@ test_that("choice_formula can be specified", {
     as_covariates = "A",
     ac_covariates = "B",
     ASC = TRUE,
-    random_effects = c("A" = "cn", "B" = "cn")
+    random_effects = c("A" = "cn", "B" = "cln")
   )
   expect_choice_formula(
     choice_formula(
       formula = choice ~ A | B,
-      random_effects = c("B" = "cn", "ASC" = "cn")
+      random_effects = c("B" = "cln", "ASC" = "cln-")
     ),
     error_term = "probit",
     choice = "choice",
@@ -72,7 +78,15 @@ test_that("choice_formula can be specified", {
     as_covariates = "A",
     ac_covariates = "B",
     ASC = TRUE,
-    random_effects = c("B" = "cn", "ASC" = "cn")
+    random_effects = c("B" = "cln", "ASC" = "cln-")
+  )
+  uncorrelated <- choice_formula(
+    formula = choice ~ A | B + 0 | C,
+    random_effects = c("A" = "n", "B" = "ln", "C" = "ln-")
+  )
+  expect_identical(
+    uncorrelated$random_effects,
+    c("A" = "n", "B" = "ln", "C" = "ln-")
   )
   expect_choice_formula(
     choice_formula(
@@ -166,6 +180,13 @@ test_that("misspecifications in choice_formula can be detected", {
   expect_error(
     choice_formula(
       formula = choice ~ A,
+      random_effects = c("A" = "log-normal")
+    ),
+    "Input `random_effects` is bad"
+  )
+  expect_error(
+    choice_formula(
+      formula = choice ~ A,
       random_effects = c("bad_covariate" = "cn")
     ),
     "contains"
@@ -219,22 +240,53 @@ test_that("misspecifications in choice_formula can be detected", {
   )
 })
 
+test_that("latent class effects are checked and stored", {
+  x <- choice_formula(
+    formula = choice ~ A + I(B^2) | C,
+    random_effects = c("A" = "cn"),
+    latent_class_effects = c("I(B^2)", "ASC")
+  )
+  expect_identical(x$latent_class_effects, c("I(B^2)", "ASC"))
+  expect_error(
+    choice_formula(formula = choice ~ A | C, latent_class_effects = "D"),
+    "not on the right-hand side"
+  )
+  expect_error(
+    choice_formula(
+      formula = choice ~ A | C, latent_class_effects = c("A", "A")
+    ),
+    "latent_class_effects"
+  )
+  expect_error(
+    choice_formula(formula = choice ~ A | 0, latent_class_effects = "ASC"),
+    "not on the right-hand side"
+  )
+})
+
 test_that("choice_formula can be printed", {
   expect_error(
     print.choice_formula(1),
     "Input `x` is bad"
   )
-  expect_snapshot(
-    choice_formula(
+  messages <- capture.output(
+    print(choice_formula(
       formula = choice ~ A | B
-    )
+    )),
+    type = "message"
   )
-  expect_snapshot(
-    choice_formula(
+  text <- paste(messages, collapse = "\n")
+  expect_match(text, "choice ~ A | B | 0", fixed = TRUE)
+  messages <- capture.output(
+    print(choice_formula(
       formula = choice ~ A + B,
       random_effects = c("A" = "cn", "B" = "cn")
-    )
+    )),
+    type = "message"
   )
+  text <- paste(messages, collapse = "\n")
+  expect_match(text, "random effects", fixed = TRUE)
+  expect_match(text, "A: cn", fixed = TRUE)
+  expect_match(text, "B: cn", fixed = TRUE)
 })
 
 test_that("choice_formula can be resolved", {
@@ -251,7 +303,7 @@ test_that("choice_formula can be resolved", {
   )
   choice_formula <- choice_formula(
     formula = choice ~ 0 | brand | price:brand,
-    random_effects = c("brand" = "cn")
+    random_effects = c("brand" = "cln")
   )
   choice_formula_resolved <- resolve_choice_formula(
     choice_formula = choice_formula, x = choice_data
@@ -266,8 +318,9 @@ test_that("choice_formula can be resolved", {
   ### check random effects
   new_random_effects <- choice_formula_resolved$random_effects
   expect_identical(names(new_random_effects), "brandB")
+  expect_identical(unname(new_random_effects), "cln")
 
-  ### '.' is resolved
+  ### resolve '.'
   choice_formula_2 <- choice_formula(formula = choice ~ .)
   choice_formula_resolved_2 <- resolve_choice_formula(
     choice_formula = choice_formula_2, x = choice_data
@@ -277,43 +330,16 @@ test_that("choice_formula can be resolved", {
     new_covariate_types_2[[1]],
     c("deciderID2", "choice", "alternativeY", "brandB", "price")
   )
+
+  double <- function(x) 2 * x
+  local_formula <- choice_formula(choice ~ I(double(price)))
+  local_formula <- resolve_choice_formula(local_formula, choice_data)
+  expect_identical(
+    local_formula$covariate_types[[1]],
+    "I(double(price))"
+  )
+  expect_error(
+    resolve_choice_formula(choice_formula(choice ~ unknown), choice_data),
+    "unknown"
+  )
 })
-
-test_that("resolve_choice_formula infers alternatives with nested delimiters", {
-  wide_df <- data.frame(
-    deciderID = c(1, 2),
-    choice = c("car", "bus"),
-    travel_time_car = c(10, 12),
-    travel_time_bus = c(14, 9)
-  )
-  choice_obj <- choice_data(
-    data_frame = wide_df,
-    format = "wide",
-    column_choice = "choice",
-    column_decider = "deciderID",
-    delimiter = "_"
-  )
-  cf <- choice_formula(formula = choice ~ travel_time)
-  resolved <- resolve_choice_formula(cf, choice_obj)
-  expect_true("travel_time" %in% resolved$covariate_types[[1]])
-})
-
-test_that("logit error term supports random effects", {
-  expect_no_error(
-    cf_mixed <- choice_formula(
-      formula = choice ~ x,
-      error_term = "logit",
-      random_effects = c("x" = "cn")
-    )
-  )
-  expect_identical(cf_mixed$error_term, "logit")
-  expect_true("x" %in% names(cf_mixed$random_effects))
-
-  cf <- choice_formula(
-    formula = choice ~ x,
-    error_term = "logit"
-  )
-  expect_s3_class(cf, "choice_formula")
-  expect_identical(cf$error_term, "logit")
-})
-

@@ -29,28 +29,41 @@
 #' Column names with alternative-constant covariates.
 #'
 #' @param column_as_covariates \[`character()` | `NULL`\]\cr
-#' Column names with alternative-specific covariates in `data_frame`.
+#' Column names with alternative-specific covariates.
 #'
 #' @param delimiter \[`character(1)`\]\cr
-#' Delimiter separating alternative identifiers from covariate names in wide
-#' format. May consist of one or more characters.
+#' Delimiter separating alternative identifiers from covariate names when
+#' `format = "wide"`.
 #'
 #' @inheritParams choice_identifiers
 #'
 #' @return
-#' A `tibble`.
+#' `choice_covariates()` and `generate_choice_covariates()` return a
+#' `choice_covariates` tibble with the identifier and covariate columns. The
+#' column roles are stored in the attributes `format`, `column_decider`,
+#' `column_occasion`, `column_alternative`, `column_ac_covariates`,
+#' `column_as_covariates`, `delimiter`, and `cross_section`, analogous to
+#' \code{\link{choice_data}}.
+#'
+#' `covariate_names()` returns a `character` vector.
+#'
+#' `design_matrices()` returns a `list` of class `choice_design_matrices` with
+#' one numeric design matrix per choice occasion, see the section below. The
+#' attributes `Tp` (the number of choice occasions per decider), `alternatives`,
+#' `availability` (the indices of the available alternatives per occasion), and
+#' `choice_type` describe the structure.
 #'
 #' @section Design matrices:
 #' A covariate design matrix contains the choice covariates of a decider at a
 #' choice occasion. It is of dimension \code{J} x \code{P}, where \code{J} is
-#' the number of choice alternatives and \code{P} the number of effects. See
-#' \code{\link{compute_P}} to compute the number \code{P}.
+#' the number of choice alternatives and \code{P} the number of effects.
 #'
 #' @export
 #'
 #' @keywords data
 #'
 #' @examples
+#' ### sample covariates from choice effects
 #' choice_effects <- choice_effects(
 #'   choice_formula = choice_formula(
 #'     formula = choice ~ price | income | comfort,
@@ -62,13 +75,10 @@
 #'   ),
 #'   choice_alternatives = choice_alternatives(J = 3)
 #' )
-#'
-#' ids <- generate_choice_identifiers(N = 3, Tp = 2)
-#'
-#' choice_covariates <- generate_choice_covariates(
+#' (choice_covariates <- generate_choice_covariates(
 #'   choice_effects = choice_effects,
-#'   choice_identifiers = ids
-#' )
+#'   choice_identifiers = generate_choice_identifiers(N = 3, Tp = 2)
+#' ))
 
 choice_covariates <- function(
   data_frame,
@@ -145,8 +155,14 @@ choice_covariates <- function(
   }
 
   ### extract choice identifiers
+  identifier_data <- if (identical(format, "long")) {
+    data_frame[c(column_decider, column_occasion)]
+  } else {
+    data_frame_wide[c(column_decider, column_occasion)]
+  }
   choice_identifiers <- choice_identifiers(
-    data_frame = data_frame_wide[c(column_decider, column_occasion)],
+    data_frame = identifier_data,
+    format = format,
     column_decider = column_decider,
     column_occasion = column_occasion,
     cross_section = cross_section
@@ -156,20 +172,12 @@ choice_covariates <- function(
 
   ### build 'choice_covariates' object
   choice_covariates <- if (format == "long") {
-    choice_covariates <- cbind(
-      choice_identifiers,
-      data_frame_wide[, c(column_ac_covariates, column_as_covariates_wide)]
-    ) |> wide_to_long(
-      column_choice = NULL,
-      column_alternative = column_alternative,
-      alternatives = alternatives,
-      delimiter = delimiter
-    )
     columns <- c(
       column_decider, column_occasion, column_alternative,
       column_ac_covariates, column_as_covariates
     )
-    choice_covariates <- choice_covariates[, columns, drop = FALSE]
+    columns <- unique(columns[!is.na(columns)])
+    tibble::as_tibble(data_frame[, columns, drop = FALSE])
   } else {
     choice_covariates <- cbind(
       choice_identifiers,
@@ -195,7 +203,7 @@ choice_covariates <- function(
 is.choice_covariates <- function(
     x, error = FALSE, var_name = oeli::variable_name(x)
 ) {
-  validate_choice_object(
+  check_choice_object(
     x = x,
     class_name = "choice_covariates",
     error = error,
@@ -208,17 +216,21 @@ is.choice_covariates <- function(
 #' @inheritParams oeli::correlated_regressors
 #'
 #' @param choice_effects \[`choice_effects` | `NULL`\]\cr
-#' Optional \code{\link{choice_effects}} object used to align covariate labels.
+#' A \code{\link{choice_effects}} object.
 #'
 #' @param choice_identifiers \[`choice_identifiers`\]\cr
-#' A \code{\link{choice_identifiers}} object describing the simulated panel.
+#' A \code{\link{choice_identifiers}} object.
 #'
 #' @export
 
 generate_choice_covariates <- function(
   choice_effects = NULL,
   choice_identifiers = generate_choice_identifiers(N = 100),
-  labels = covariate_names(choice_effects),
+  labels = if (is.null(choice_effects)) {
+    character()
+  } else {
+    covariate_names(choice_effects)
+  },
   n = nrow(choice_identifiers),
   marginals = list(),
   correlation = diag(length(labels)),
@@ -230,13 +242,17 @@ generate_choice_covariates <- function(
   is.choice_identifiers(choice_identifiers, error = TRUE)
   if (!is.null(choice_effects)) is.choice_effects(choice_effects)
 
-  covariates <- oeli::correlated_regressors(
-    labels = labels,
-    n = n,
-    marginals = marginals,
-    correlation = correlation,
-    verbose = verbose
-  )
+  covariates <- if (length(labels) == 0L) {
+    data.frame(row.names = seq_len(n))
+  } else {
+    oeli::correlated_regressors(
+      labels = labels,
+      n = n,
+      marginals = marginals,
+      correlation = correlation,
+      verbose = verbose
+    )
+  }
   choice_covariates(
     data_frame = cbind(choice_identifiers, covariates),
     format = "wide",
@@ -262,155 +278,52 @@ covariate_names <- function(choice_effects) {
   choice_alternatives <- attr(choice_effects, "choice_alternatives")
   delimiter <- attr(choice_effects, "delimiter")
 
-  ### build covariate names
+  ### build covariate names from the variables underlying each term
+  variables <- vector("list", 3L)
+  for (r in seq_len(3L)) {
+    variables_r <- lapply(covariate_types[[r]], function(term) {
+      parsed <- tryCatch(str2lang(term), error = function(e) NULL)
+      if (is.null(parsed)) term else all.vars(parsed)
+    })
+    variables_r <- as.character(unlist(variables_r, use.names = FALSE))
+    variables[[r]] <- setdiff(unique(variables_r), ".")
+  }
   covariate_names <- character()
-  for (cov in unlist(covariate_types[c(1, 3)])) {
+  for (cov in unique(c(variables[[1]], variables[[3]]))) {
     covariate_names <- c(
       covariate_names,
       paste(cov, as.character(choice_alternatives), sep = delimiter)
     )
   }
-  for (cov in covariate_types[[2]]) {
+  for (cov in variables[[2]]) {
     covariate_names <- c(covariate_names, cov)
   }
-  return(covariate_names)
+  unique(covariate_names)
 
 }
 
 #' @noRd
 
-drop_intercept <- function(form, df, r) {
-  mm <- oeli::try_silent(
-    stats::model.matrix(form, data = df, rhs = r, lhs = 0)
+drop_intercept <- function(form, df, r, xlevels = NULL) {
+  mm <- oeli::try_silent(formula_model_matrix(form, df, r, xlevels))
+  oeli::input_check_response(
+    check = if (inherits(mm, "fail")) as.character(mm) else TRUE,
+    var_name = "formula"
   )
-  if (inherits(mm, "fail") || is.null(mm) || NCOL(mm) == 0L) {
+  if (is.null(mm) || NCOL(mm) == 0L) {
     return(NULL)
   }
+  if (nrow(mm) != nrow(df)) {
+    cli::cli_abort(
+      "Covariates in part {r} of {.var formula} could not be evaluated for
+      every row of the data.",
+      call = NULL
+    )
+  }
   keep <- colnames(mm) != "(Intercept)"
-  if (!any(keep)) {
-    mm[, 0, drop = FALSE]
-  } else {
-    mm[, keep, drop = FALSE]
-  }
-}
-
-#' @noRd
-
-prepare_choice_long_data <- function(x, choice_effects, choice_identifiers) {
-
-  format <- attr(x, "format")
-  column_choice <- attr(x, "column_choice")
-  column_decider <- attr(x, "column_decider")
-  column_occasion <- attr(x, "column_occasion")
-  column_alternative <- attr(x, "column_alternative")
-  delimiter <- attr(x, "delimiter")
-  choice_alternatives <- attr(choice_effects, "choice_alternatives")
-  alts <- as.character(choice_alternatives)
-  choice_type <- attr(x, "choice_type")
-  if (is.null(choice_type)) {
-    ordered_alternatives <- isTRUE(attr(choice_alternatives, "ordered"))
-    choice_type <- if (ordered_alternatives) "ordered" else "discrete"
-  }
-
-  if (identical(format, "wide")) {
-    base_alt <- attr(choice_alternatives, "base")
-    tmp_choice <- column_choice
-    if (is.null(tmp_choice) || !(tmp_choice %in% names(x))) {
-      tmp_choice <- ".choicedata_dummy_choice"
-      x[[tmp_choice]] <- base_alt
-    }
-    x_long <- wide_to_long(
-      data_frame = x,
-      column_choice = tmp_choice,
-      column_alternative = "alternative",
-      alternatives = alts,
-      delimiter = delimiter,
-      choice_type = choice_type
-    )
-    column_choice_long <- tmp_choice
-    column_alternative_long <- "alternative"
-  } else {
-    x_long <- x
-    column_alternative_long <- if (is.null(column_alternative)) {
-      "alternative"
-    } else {
-      column_alternative
-    }
-    if (!column_alternative_long %in% names(x_long)) {
-      cli::cli_abort(
-        "Missing {.val {column_alternative_long}} column in {.var x}
-        (long format expected).",
-        call = NULL
-      )
-    }
-    if (!identical(column_alternative_long, "alternative")) {
-      x_long[["alternative"]] <- x_long[[column_alternative_long]]
-    }
-    column_choice_long <- column_choice
-  }
-
-  if (!column_decider %in% names(x_long)) {
-    cli::cli_abort(
-      "Missing {.val {column_decider}} column in {.var x}.",
-      call = NULL
-    )
-  }
-  if (!is.null(column_occasion) && !column_occasion %in% names(x_long)) {
-    cli::cli_abort(
-      "Missing {.val {column_occasion}} column in {.var x}.",
-      call = NULL
-    )
-  }
-
-  ids_df <- as.data.frame(choice_identifiers)
-  cd_id <- attr(choice_identifiers, "column_decider")
-  co_id <- attr(choice_identifiers, "column_occasion")
-  co_vals <- if (!is.null(co_id)) ids_df[[co_id]] else rep(1L, nrow(ids_df))
-
-  list(
-    x_long = x_long,
-    format = format,
-    column_choice = column_choice_long,
-    column_decider = column_decider,
-    column_occasion = column_occasion,
-    column_alternative = column_alternative_long,
-    alts = alts,
-    J = attr(choice_alternatives, "J"),
-    effect_names = choice_effects$effect_name,
-    Tp = read_Tp(choice_identifiers),
-    ids_df = ids_df,
-    cd_id = cd_id,
-    co_id = co_id,
-    co_vals = co_vals,
-    choice_type = choice_type
-  )
-}
-
-#' @noRd
-
-subset_choice_observation <- function(prep, index) {
-  dec_val <- prep$ids_df[[prep$cd_id]][index]
-  occ_val <- prep$co_vals[index]
-  if (is.null(prep$column_occasion)) {
-    id_prep <- prep$x_long[[prep$column_decider]] == dec_val
-    df_nt <- prep$x_long[id_prep, , drop = FALSE]
-  } else {
-    df_nt <- prep$x_long[
-      prep$x_long[[prep$column_decider]] == dec_val &
-        prep$x_long[[prep$column_occasion]] == occ_val,
-      , drop = FALSE
-    ]
-  }
-  ord <- match(prep$alts, as.character(df_nt[["alternative"]]))
-  if (anyNA(ord)) {
-    cli::cli_abort(
-      "Missing rows for some alternatives in {.var x} at decider
-      {.val {dec_val}} and occasion
-      {.val {if (is.null(prep$column_occasion)) 1 else occ_val}}.",
-      call = NULL
-    )
-  }
-  df_nt[ord, , drop = FALSE]
+  mm <- if (!any(keep)) mm[, 0, drop = FALSE] else mm[, keep, drop = FALSE]
+  colnames(mm) <- gsub("\\s+", "", colnames(mm))
+  mm
 }
 
 #' @rdname choice_covariates
@@ -430,188 +343,125 @@ design_matrices <- function(
   check_not_missing(choice_effects)
   is.choice_effects(choice_effects, error = TRUE)
   is.choice_identifiers(choice_identifiers, error = TRUE)
-  validate_choice_class_union(
+  check_choice_class_union(
     x = x,
     class_names = c("choice_data", "choice_covariates"),
     var_name = "x"
   )
 
   prep <- prepare_choice_long_data(x, choice_effects, choice_identifiers)
-  choice_formula <- attr(choice_effects, "choice_formula")
-  choice_formula <- resolve_choice_formula(choice_formula, x)
+  build_design_matrices(prep, x, choice_effects)
+}
+
+#' @noRd
+
+build_design_matrices <- function(prep, x, choice_effects) {
+
+  ### resolve formula on the long data and check that it matches the data
+  stored_formula <- attr(choice_effects, "choice_formula")
+  x_long <- structure(
+    prep$x_long,
+    class = unique(c(class(x)[1L], class(prep$x_long))),
+    format = "long",
+    column_alternative = "alternative",
+    column_decider = prep$column_decider,
+    column_occasion = prep$column_occasion,
+    column_ac_covariates = attr(x, "column_ac_covariates")
+  )
+  choice_formula <- resolve_choice_formula(
+    stored_formula,
+    x_long,
+    choice_alternatives = attr(choice_effects, "choice_alternatives")
+  )
+  oeli::input_check_response(
+    check = if (identical(
+      stored_formula$covariate_types,
+      choice_formula$covariate_types
+    )) TRUE else paste(
+      "Does not match `x`; recreate `choice_effects` with `choice_data = x`"
+    ),
+    var_name = "choice_effects"
+  )
   form <- choice_formula$formula
   P <- nrow(choice_effects)
+  ordered_type <- identical(prep$choice_type, "ordered")
+  n_occasions <- nrow(prep$ids_df)
 
-  design_list <- vector("list", length = nrow(prep$ids_df))
+  ### model matrices for the three formula parts
+  model_matrices <- lapply(seq_len(3L), function(r) {
+    drop_intercept(form, prep$x_long, r, choice_formula$xlevels)
+  })
+  effect_name <- as.character(choice_effects$effect_name)
+  effect_cov <- as.character(choice_effects$covariate)
+  effect_alt <- as.character(choice_effects$alternative)
+  effect_as_cov <- choice_effects$as_covariate
+  effect_as_eff <- choice_effects$as_effect
+  effect_is_ASC <- is.na(effect_cov)
+  if (ordered_type && any(effect_as_eff)) {
+    cli::cli_abort(
+      "Ordered choice models cannot include alternative-specific effects.",
+      call = NULL
+    )
+  }
+  mm1 <- model_matrices[[1L]]
+  mm2 <- model_matrices[[2L]]
+  mm3 <- model_matrices[[3L]]
+  col1 <- if (is.null(mm1)) rep(NA_integer_, P) else match(effect_cov, colnames(mm1))
+  col2 <- if (is.null(mm2)) rep(NA_integer_, P) else match(effect_cov, colnames(mm2))
+  col3 <- if (is.null(mm3)) rep(NA_integer_, P) else match(effect_cov, colnames(mm3))
+  template <- matrix(
+    0, nrow = if (ordered_type) 1L else prep$J, ncol = P,
+    dimnames = list(if (!ordered_type) prep$alts, effect_name)
+  )
 
-  for (k in seq_len(nrow(prep$ids_df))) {
-    df_nt <- subset_choice_observation(prep, k)
-    ordered_type <- identical(prep$choice_type, "ordered")
-    df_for_mm <- if (ordered_type) df_nt[1, , drop = FALSE] else df_nt
-
-    mm1 <- drop_intercept(form, df_for_mm, 1L)
-    mm2 <- drop_intercept(form, df_for_mm, 2L)
-    mm3 <- drop_intercept(form, df_for_mm, 3L)
-
-    X_nt <- matrix(0, nrow = if (ordered_type) 1L else prep$J, ncol = P)
-    if (!ordered_type) {
-      rownames(X_nt) <- prep$alts
-    }
-    colnames(X_nt) <- prep$effect_names
-
-    for (e in seq_len(P)) {
-      e_name <- choice_effects$effect_name[e]
-      e_cov <- choice_effects$covariate[e]
-      e_alt <- choice_effects$alternative[e]
-      e_as_cov <- choice_effects$as_covariate[e]
-      e_as_eff <- choice_effects$as_effect[e]
-      e_is_ASC <- is.na(e_cov)
-
-      if (!e_as_eff) {
-        if (!is.null(mm1) && !is.na(e_cov) && e_cov %in% colnames(mm1)) {
-          vals <- mm1[, e_cov, drop = TRUE]
-          if (ordered_type) {
-            X_nt[1, e_name] <- vals[1]
-          } else {
-            names(vals) <- as.character(df_nt[["alternative"]])
-            X_nt[names(vals), e_name] <- vals
+  ### build one design matrix per choice occasion
+  design_list <- vector("list", length = n_occasions)
+  availability <- vector("list", length = n_occasions)
+  for (k in seq_len(n_occasions)) {
+    occasion <- subset_choice_occasion(prep, k)
+    row_index <- occasion$row_index
+    occasion_alts <- occasion$alternatives
+    X_nt <- template
+    if (ordered_type) {
+      first_row <- row_index[1L]
+      for (e in seq_len(P)) {
+        if (!is.na(col1[e])) X_nt[1L, e] <- mm1[first_row, col1[e]]
+      }
+    } else {
+      for (e in seq_len(P)) {
+        if (!effect_as_eff[e]) {
+          if (!is.na(col1[e])) {
+            X_nt[occasion_alts, e] <- mm1[row_index, col1[e]]
           }
-        }
-      } else if (e_as_eff && !e_as_cov) {
-        if (ordered_type) {
-          cli::cli_abort(
-            "Ordered choice models cannot include alternative-specific
-            effects.",
-            call = NULL
-          )
-        }
-        if (isTRUE(e_is_ASC)) {
-          X_nt[e_alt, e_name] <- 1
-        } else if (!is.null(mm2) && e_cov %in% colnames(mm2)) {
-          j <- match(e_alt, prep$alts)
-          X_nt[e_alt, e_name] <- mm2[j, e_cov]
-        }
-      } else {
-        if (ordered_type) {
-          cli::cli_abort(
-            "Ordered choice models cannot include alternative-specific
-            effects.",
-            call = NULL
-          )
-        }
-        if (!is.null(mm3) && e_cov %in% colnames(mm3)) {
-          j <- match(e_alt, prep$alts)
-          X_nt[e_alt, e_name] <- mm3[j, e_cov]
+        } else {
+          j <- match(effect_alt[e], occasion_alts)
+          if (is.na(j)) next
+          if (!effect_as_cov[e]) {
+            if (effect_is_ASC[e]) {
+              X_nt[effect_alt[e], e] <- 1
+            } else if (!is.na(col2[e])) {
+              X_nt[effect_alt[e], e] <- mm2[row_index[j], col2[e]]
+            }
+          } else if (!is.na(col3[e])) {
+            X_nt[effect_alt[e], e] <- mm3[row_index[j], col3[e]]
+          }
         }
       }
     }
-
+    oeli::input_check_response(
+      check = if (all(is.finite(X_nt))) TRUE else "Must contain finite values",
+      var_name = "design matrix"
+    )
     design_list[[k]] <- X_nt
+    availability[[k]] <- occasion$availability
   }
 
   structure(
     design_list,
     class = c("choice_design_matrices", "list"),
     Tp = prep$Tp,
-    alternatives = prep$alts
+    alternatives = prep$alts,
+    availability = availability,
+    choice_type = prep$choice_type
   )
 }
-
-#' @noRd
-
-extract_choice_indices <- function(
-    choice_data,
-    choice_effects,
-    choice_identifiers = extract_choice_identifiers(choice_data)
-  ) {
-
-  is.choice_data(choice_data, error = TRUE)
-  is.choice_effects(choice_effects, error = TRUE)
-  is.choice_identifiers(choice_identifiers, error = TRUE)
-
-  prep <- prepare_choice_long_data(
-    choice_data, choice_effects, choice_identifiers
-  )
-  column_choice <- prep$column_choice
-  if (is.null(column_choice) || !column_choice %in% names(prep$x_long)) {
-    cli::cli_abort(
-      "Cannot extract choices because column {.val {column_choice}} is
-      missing.",
-      call = NULL
-    )
-  }
-
-  choice_list <- vector("list", length = nrow(prep$ids_df))
-  for (k in seq_len(nrow(prep$ids_df))) {
-    df_nt <- subset_choice_observation(prep, k)
-    values_raw <- df_nt[[column_choice]]
-    if (is.factor(values_raw) && is.ordered(values_raw)) {
-      values <- as.numeric(values_raw)
-    } else if (is.factor(values_raw)) {
-      values <- suppressWarnings(as.numeric(as.character(values_raw)))
-    } else {
-      values <- suppressWarnings(as.numeric(values_raw))
-    }
-    if (identical(prep$choice_type, "ranked")) {
-      expected <- seq_len(prep$J)
-      rank_values <- suppressWarnings(as.numeric(values_raw))
-      rank_integers <- suppressWarnings(as.integer(rank_values))
-      if (length(rank_integers) != prep$J || anyNA(rank_integers) ||
-          !isTRUE(all.equal(rank_values, rank_integers)) ||
-          !identical(sort(rank_integers), expected)) {
-        cli::cli_abort(
-          "Ranked choice data must contain a full ranking of all alternatives.",
-          call = NULL
-        )
-      }
-      order_idx <- order(rank_integers)
-      ranking_alts <- df_nt[["alternative"]][order_idx]
-      choice_list[[k]] <- match(ranking_alts, prep$alts)
-    } else if (identical(prep$choice_type, "ordered")) {
-      non_missing <- !is.na(values_raw)
-      if (!any(non_missing)) {
-        cli::cli_abort(
-          "Ordered choice data must contain an observed category for each
-          observation.",
-          call = NULL
-        )
-      }
-      if (length(unique(values_raw[non_missing])) != 1L) {
-        cli::cli_abort(
-          "Ordered choice data must report a single category per observation.",
-          call = NULL
-        )
-      }
-      selected <- values_raw[which(non_missing)][1]
-      idx <- NA_integer_
-      if (is.factor(values_raw)) {
-        idx <- as.integer(selected)
-      } else if (is.numeric(selected)) {
-        idx <- as.integer(selected)
-      } else {
-        idx <- match(as.character(selected), prep$alts)
-      }
-      if (is.na(idx) || idx < 1L || idx > prep$J) {
-        cli::cli_abort(
-          "Ordered choice categories must align with declared alternatives.",
-          call = NULL
-        )
-      }
-      choice_list[[k]] <- idx
-    } else {
-      chosen_idx <- which(values == 1)
-      if (length(chosen_idx) != 1) {
-        cli::cli_abort(
-          "Choice data must contain exactly one chosen alternative per
-          observation.",
-          call = NULL
-        )
-      }
-      chosen_alt <- df_nt[["alternative"]][chosen_idx]
-      choice_list[[k]] <- match(chosen_alt, prep$alts)
-    }
-  }
-
-  structure(choice_list, Tp = prep$Tp)
-}
-

@@ -14,13 +14,18 @@ Offers a set of objects tailored to simplify working with choice data. It enable
 Useful links:
 \itemize{
   \item \url{https://github.com/loelschlaeger/choicedata}
-  \item \url{http://loelschlaeger.de/choicedata/}
+  \item \url{https://loelschlaeger.de/choicedata/}
   \item Report bugs at \url{https://github.com/loelschlaeger/choicedata/issues}
 }
 
 }
 \author{
 \strong{Maintainer}: Lennart Oelschläger \email{oelschlaeger.lennart@gmail.com} (\href{https://orcid.org/0000-0001-5421-9313}{ORCID})
+
+Authors:
+\itemize{
+  \item Lennart Oelschläger \email{oelschlaeger.lennart@gmail.com} (\href{https://orcid.org/0000-0001-5421-9313}{ORCID})
+}
 
 }
 \keyword{internal}

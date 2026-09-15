@@ -5,11 +5,11 @@
 \alias{generate_choice_preferences}
 \title{Define choice preferences}
 \usage{
-choice_preferences(data_frame, column_decider = colnames(data_frame)[1])
+choice_preferences(data_frame, column_decider = "deciderID")
 
 generate_choice_preferences(
   choice_effects,
-  choice_parameters = NULL,
+  choice_parameters = generate_choice_parameters(choice_effects),
   choice_identifiers = generate_choice_identifiers(N = 100)
 )
 }
@@ -31,9 +31,10 @@ A \code{\link{choice_parameters}} object.}
 A \code{\link{choice_identifiers}} object.}
 }
 \value{
-An object of class \code{choice_preferences}, which is a \code{data.frame} with the
+An object of class \code{choice_preferences}, which is a \code{tibble} with the
 deciders' preferences. The column names are the names of the effects in the
-choice model. The first column contains the decider identifiers.
+choice model. The first column contains the decider identifiers, its name is
+stored in the attribute \code{column_decider}.
 }
 \description{
 The \code{choice_preferences} object defines the deciders' preferences in the
@@ -45,6 +46,7 @@ choice model.
 }
 \examples{
 ### generate choice preferences from choice parameters and effects
+set.seed(1)
 choice_effects <- choice_effects(
   choice_formula = choice_formula(
     formula = choice ~ price | income | comfort,
@@ -52,24 +54,18 @@ choice_effects <- choice_effects(
     random_effects = c(
       "price" = "cn",
       "income" = "cn"
-    )
+    ),
+    latent_class_effects = "price"
   ),
   choice_alternatives = choice_alternatives(J = 3)
 )
-
 choice_parameters <- generate_choice_parameters(
-  choice_effects = choice_effects
+  choice_effects = choice_effects, C = 2
 )
-
-ids <- generate_choice_identifiers(N = 4)
-
 (choice_preferences <- generate_choice_preferences(
   choice_parameters = choice_parameters,
   choice_effects = choice_effects,
-  choice_identifiers = ids
+  choice_identifiers = generate_choice_identifiers(N = 4)
 ))
-
-### inspect decider-specific preference vectors
-head(choice_preferences)
 }
 \keyword{model}

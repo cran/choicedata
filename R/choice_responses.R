@@ -1,9 +1,7 @@
 #' Define choice response
 #'
 #' @description
-#' The `choice_responses` object defines the observed discrete responses.
-#' Additional response columns (for example ranked choice indicators) are
-#' preserved so they can be merged with covariates downstream.
+#' The `choice_responses` object defines the observed choice responses.
 #'
 #' - `generate_choice_responses()` simulates choices
 #'
@@ -16,13 +14,18 @@
 #' @inheritParams choice_identifiers
 #'
 #' @return
-#' A `data.frame`.
+#' A `choice_responses` tibble with the identifier columns followed by the
+#' response column(s). The attributes `column_choice`, `column_decider`,
+#' `column_occasion`, `cross_section`, and `column_response_columns` (all
+#' non-identifier columns, e.g., the ranking columns for ranked responses)
+#' store the column roles.
 #'
 #' @export
 #'
 #' @keywords data
 #'
 #' @examples
+#' ### generate choice responses from choice effects
 #' choice_effects <- choice_effects(
 #'   choice_formula = choice_formula(
 #'     formula = choice ~ price | time,
@@ -30,14 +33,17 @@
 #'   ),
 #'   choice_alternatives = choice_alternatives(J = 5)
 #' )
-#' generate_choice_responses(choice_effects = choice_effects)
+#' (generate_choice_responses(
+#'   choice_effects = choice_effects,
+#'   choice_type = "ranked"
+#' ))
 
 choice_responses <- function(
     data_frame,
     column_choice = "choice",
     column_decider = "deciderID",
     column_occasion = NULL,
-    cross_section = FALSE
+    cross_section = is.null(column_occasion)
   ) {
 
   ### input checks
@@ -46,9 +52,13 @@ choice_responses <- function(
   check_column_decider(column_decider, null.ok = FALSE)
   check_column_occasion(column_occasion, column_decider, null.ok = TRUE)
   check_cross_section(cross_section)
+  id_cols <- c(column_decider, column_occasion)
+  id_cols <- id_cols[!vapply(id_cols, is.null, logical(1))]
+  choice_cols <- setdiff(names(data_frame), id_cols)
   check_data_frame(
     data_frame,
-    required_columns = c(column_decider, column_occasion, column_choice)
+    required_columns = c(column_decider, column_occasion, column_choice),
+    allow_missing_columns = choice_cols
   )
   choice_identifiers <- choice_identifiers(
     data_frame = data_frame[c(column_decider, column_occasion)],
@@ -58,9 +68,6 @@ choice_responses <- function(
   )
 
   ### build 'choice_responses' object
-  id_cols <- c(column_decider, column_occasion)
-  id_cols <- id_cols[!vapply(id_cols, is.null, logical(1))]
-  choice_cols <- setdiff(names(data_frame), id_cols)
   if (!column_choice %in% choice_cols) {
     cli::cli_abort(
       "Column {.val {column_choice}} must be present in {.var data_frame} to
@@ -69,8 +76,9 @@ choice_responses <- function(
     )
   }
   choices <- data_frame[choice_cols]
+  responses <- tibble::as_tibble(cbind(choice_identifiers, choices))
   structure(
-    cbind(choice_identifiers, choices),
+    responses,
     class = tibble_class("choice_responses", class(data_frame)),
     column_decider = attr(choice_identifiers, "column_decider"),
     column_occasion = attr(choice_identifiers, "column_occasion"),
@@ -87,7 +95,7 @@ is.choice_responses <- function(
     error = TRUE,
     var_name = oeli::variable_name(x)
   ) {
-  validate_choice_object(
+  check_choice_object(
     x = x,
     class_name = "choice_responses",
     error = error,
@@ -98,26 +106,25 @@ is.choice_responses <- function(
 #' @rdname choice_responses
 #'
 #' @param choice_effects \[`choice_effects`\]\cr
-#' A \code{\link{choice_effects}} object describing the model structure.
+#' A \code{\link{choice_effects}} object.
 #'
 #' @param choice_covariates \[`choice_covariates`\]\cr
-#' Covariates used to construct utilities.
+#' A \code{\link{choice_covariates}} object.
 #'
 #' @param choice_parameters \[`choice_parameters`\]\cr
-#' Model parameters supplying the mean and covariance components.
+#' A \code{\link{choice_parameters}} object.
 #'
 #' @param choice_identifiers \[`choice_identifiers`\]\cr
-#' Identifiers describing the panel or cross-sectional structure.
+#' A \code{\link{choice_identifiers}} object.
 #'
 #' @param choice_preferences \[`choice_preferences`\]\cr
-#' Preference draws to simulate the choices.
+#' A \code{\link{choice_preferences}} object.
 #'
 #' @export
 #'
 #' @param choice_type \[`character(1)`\]\cr
-#' The response type to simulate. Use `"auto"` (default) to derive the type
-#' from `choice_alternatives`, or explicitly request `"discrete"`,
-#' `"ordered"`, or `"ranked"` outcomes.
+#' The response type to simulate. Use `"unordered"` (default), `"ordered"`,
+#' or `"ranked"`.
 
 generate_choice_responses <- function(
   choice_effects,
@@ -134,7 +141,7 @@ generate_choice_responses <- function(
     choice_identifiers = choice_identifiers
   ),
   column_choice = "choice",
-  choice_type = c("auto", "discrete", "ordered", "ranked")
+  choice_type = c("unordered", "ordered", "ranked")
 ) {
 
   ### input checks
@@ -150,27 +157,35 @@ generate_choice_responses <- function(
   ### extract objects
   choice_alternatives <- attr(choice_effects, "choice_alternatives")
   Tp <- read_Tp(choice_identifiers)
-  N <- length(Tp)
   design_list <- design_matrices(
     x = choice_covariates,
     choice_effects = choice_effects,
     choice_identifiers = choice_identifiers
   )
+  availability <- attr(design_list, "availability")
   choice_preferences <- split_choice_preferences(
     choice_preferences,
     choice_identifiers = choice_identifiers
   )
   column_decider <- attr(choice_identifiers, "column_decider")
   column_occasion <- attr(choice_identifiers, "column_occasion")
+  decider_ids <- get_decider_identifiers(choice_identifiers)
+  preference_index <- match(
+    choice_identifiers[[column_decider]],
+    decider_ids
+  )
   ordered_alternatives <- isTRUE(attr(choice_alternatives, "ordered"))
-  inferred_type <- if (ordered_alternatives) "ordered" else "discrete"
-  if (identical(choice_type, "auto")) {
-    choice_type <- inferred_type
-  }
   if (identical(choice_type, "ordered") && !ordered_alternatives) {
     cli::cli_abort(
       "Simulating ordered responses requires {.code ordered = TRUE}
       alternatives.",
+      call = NULL
+    )
+  }
+  if (identical(choice_type, "unordered") && ordered_alternatives) {
+    cli::cli_abort(
+      "Simulating unordered responses requires alternatives without an
+      ordering.",
       call = NULL
     )
   }
@@ -211,8 +226,6 @@ generate_choice_responses <- function(
         )
       }
       gamma_augmented <- c(-Inf, gamma, +Inf)
-    } else {
-      Sigma_draw <- Sigma + diag(nrow(Sigma))
     }
   } else if (identical(error_term, "logit")) {
     if (identical(choice_type, "ordered")) {
@@ -242,43 +255,41 @@ generate_choice_responses <- function(
   ranked_matrix <- if (identical(choice_type, "ranked")) {
     matrix(NA_integer_, nrow = total_obs, ncol = length(choice_alternatives))
   }
-  for (n in seq_len(N)) {
+  for (id in seq_len(total_obs)) {
+    n <- preference_index[id]
     preference_n <- choice_preferences[[n]]
-    for (t in seq_len(Tp[n])) {
-      id <- get_position_from_identifier(
-        N = N, Tp = Tp, decider_number = n, occasion_number = t
-      )
-      design_matrix_nt <- design_list[[id]]
-      if (identical(choice_type, "ordered")) {
-        mean_val <- as.numeric(design_matrix_nt %*% preference_n)
-        if (identical(error_term, "probit")) {
-          utility <- stats::rnorm(n = 1L, mean = mean_val, sd = Sigma_sd)
-        } else {
-          utility <- mean_val + stats::rlogis(n = 1L)
-        }
-        idx <- findInterval(
-          utility, gamma_augmented, all.inside = TRUE, left.open = TRUE
-        )
-        top_choices[[id]] <- choice_alternatives[idx]
+    design_matrix_nt <- design_list[[id]]
+    if (identical(choice_type, "ordered")) {
+      mean_val <- as.numeric(design_matrix_nt %*% preference_n)
+      if (identical(error_term, "probit")) {
+        utility <- stats::rnorm(n = 1L, mean = mean_val, sd = Sigma_sd)
       } else {
-        if (identical(error_term, "probit")) {
-          U_id <- oeli::rmvnorm(
-            mean = as.vector(design_matrix_nt %*% preference_n),
-            Sigma = Sigma_draw
-          )
-        } else {
-          V_id <- as.vector(design_matrix_nt %*% preference_n)
-          eps <- -log(-log(stats::runif(length(V_id))))
-          U_id <- V_id + eps
-        }
-        if (identical(choice_type, "ranked")) {
-          order_idx <- order(U_id, decreasing = TRUE)
-          ranking <- choice_alternatives[order_idx]
-          top_choices[id] <- ranking[1]
-          ranked_matrix[id, ] <- match(choice_alternatives, ranking)
-        } else {
-          top_choices[id] <- choice_alternatives[which.max(U_id)]
-        }
+        utility <- mean_val + stats::rlogis(n = 1L)
+      }
+      idx <- findInterval(
+        utility, gamma_augmented, all.inside = TRUE, left.open = TRUE
+      )
+      top_choices[[id]] <- choice_alternatives[idx]
+    } else {
+      available <- availability[[id]]
+      design_matrix_nt <- design_matrix_nt[available, , drop = FALSE]
+      if (identical(error_term, "probit")) {
+        U_id <- oeli::rmvnorm(
+          mean = as.vector(design_matrix_nt %*% preference_n),
+          Sigma = Sigma[available, available, drop = FALSE]
+        )
+      } else {
+        V_id <- as.vector(design_matrix_nt %*% preference_n)
+        eps <- -log(-log(stats::runif(length(V_id))))
+        U_id <- V_id + eps
+      }
+      if (identical(choice_type, "ranked")) {
+        order_idx <- order(U_id, decreasing = TRUE)
+        ranking <- choice_alternatives[available[order_idx]]
+        top_choices[id] <- ranking[1]
+        ranked_matrix[id, ] <- match(choice_alternatives, ranking)
+      } else {
+        top_choices[id] <- choice_alternatives[available[which.max(U_id)]]
       }
     }
   }
@@ -287,7 +298,10 @@ generate_choice_responses <- function(
   data_frame <- as.data.frame(choice_identifiers, stringsAsFactors = FALSE)
   if (identical(choice_type, "ordered")) {
     choices <- vapply(top_choices, as.character, character(1))
-    data_frame[[column_choice]] <- choices
+    ### keep unused ordered categories available to later model construction
+    data_frame[[column_choice]] <- factor(
+      choices, levels = alt_labels, ordered = TRUE
+    )
   } else {
     data_frame[[column_choice]] <- as.character(top_choices)
   }
@@ -308,3 +322,121 @@ generate_choice_responses <- function(
   )
 }
 
+#' @noRd
+
+extract_choice_indices <- function(
+    choice_data,
+    choice_effects,
+    choice_identifiers = extract_choice_identifiers(choice_data)
+  ) {
+
+  is.choice_data(choice_data, error = TRUE)
+  is.choice_effects(choice_effects, error = TRUE)
+  is.choice_identifiers(choice_identifiers, error = TRUE)
+
+  prep <- prepare_choice_long_data(
+    choice_data, choice_effects, choice_identifiers
+  )
+  build_choice_indices(prep)
+}
+
+#' @noRd
+
+build_choice_indices <- function(prep) {
+
+  column_choice <- prep$column_choice
+  n_occasions <- nrow(prep$ids_df)
+  if (!prep$has_choice) {
+    choice_list <- rep(list(integer()), n_occasions)
+    return(structure(choice_list, Tp = prep$Tp))
+  }
+  if (is.null(column_choice) || !column_choice %in% names(prep$x_long)) {
+    cli::cli_abort(
+      "Cannot extract choices because column {.val {column_choice}} is
+      missing.",
+      call = NULL
+    )
+  }
+  choice_values <- prep$x_long[[column_choice]]
+  choice_is_factor <- is.factor(choice_values)
+  choice_is_ordered <- is.ordered(choice_values)
+
+  choice_list <- vector("list", length = n_occasions)
+  for (k in seq_len(n_occasions)) {
+    occasion <- subset_choice_occasion(prep, k)
+    values_raw <- choice_values[occasion$row_index]
+    occasion_alts <- occasion$alternatives
+    if (identical(prep$choice_type, "ranked")) {
+      rank_values <- suppressWarnings(as.numeric(values_raw))
+      rank_values <- rank_values[!is.na(rank_values)]
+      if (!length(rank_values)) {
+        choice_list[[k]] <- integer()
+        next
+      }
+      rank_integers <- as.integer(rank_values)
+      valid_ranking <- isTRUE(all.equal(rank_values, rank_integers)) &&
+        identical(sort(rank_integers), seq_along(rank_integers))
+      if (!valid_ranking) {
+        cli::cli_abort(
+          "Observed ranks must be consecutive and start at one.",
+          call = NULL
+        )
+      }
+      order_idx <- which(!is.na(values_raw))[order(rank_integers)]
+      choice_list[[k]] <- match(occasion_alts[order_idx], prep$alts)
+    } else if (identical(prep$choice_type, "ordered")) {
+      non_missing <- !is.na(values_raw)
+      if (!any(non_missing)) {
+        choice_list[[k]] <- integer()
+        next
+      }
+      if (length(unique(values_raw[non_missing])) != 1L) {
+        cli::cli_abort(
+          "Ordered choice data must report a single category per observation.",
+          call = NULL
+        )
+      }
+      selected <- values_raw[which(non_missing)][1]
+      idx <- NA_integer_
+      if (choice_is_factor) {
+        ### match labels to the declared alternatives, fall back to level index
+        idx <- match(as.character(selected), prep$alts)
+        if (is.na(idx)) idx <- as.integer(selected)
+      } else if (is.numeric(selected)) {
+        idx <- as.integer(selected)
+      } else {
+        idx <- match(as.character(selected), prep$alts)
+      }
+      if (is.na(idx) || idx < 1L || idx > prep$J) {
+        cli::cli_abort(
+          "Ordered choice categories must align with declared alternatives.",
+          call = NULL
+        )
+      }
+      choice_list[[k]] <- idx
+    } else {
+      values <- if (choice_is_ordered) {
+        as.numeric(values_raw)
+      } else if (choice_is_factor) {
+        suppressWarnings(as.numeric(as.character(values_raw)))
+      } else {
+        suppressWarnings(as.numeric(values_raw))
+      }
+      chosen_idx <- which(values == 1)
+      if (!length(chosen_idx) && all(is.na(values))) {
+        choice_list[[k]] <- integer()
+        next
+      }
+      if (length(chosen_idx) != 1) {
+        cli::cli_abort(
+          "Choice data must contain exactly one chosen alternative per
+          observation.",
+          call = NULL
+        )
+      }
+      choice_list[[k]] <- match(occasion_alts[chosen_idx], prep$alts)
+    }
+  }
+
+  structure(choice_list, Tp = prep$Tp)
+}

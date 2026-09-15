@@ -10,16 +10,20 @@ choice_probabilities(
   choice_only = TRUE,
   column_decider = "deciderID",
   column_occasion = NULL,
-  cross_section = FALSE,
-  column_probabilities = if (choice_only) "choice_probability"
+  cross_section = is.null(column_occasion),
+  column_probabilities = NULL,
+  logarithm = FALSE,
+  aggregate = c("occasion", "decider")
 )
 
 compute_choice_probabilities(
   choice_parameters,
   choice_data,
   choice_effects,
-  choice_only = FALSE,
+  choice_only = TRUE,
   input_checks = TRUE,
+  aggregate = c("occasion", "decider"),
+  logarithm = FALSE,
   ...
 )
 }
@@ -47,27 +51,58 @@ choice alternatives.
 If \code{choice_only = TRUE}, it is the name of a single column that contains the
 probabilities for the chosen alternatives.}
 
-\item{choice_parameters}{[\code{choice_parameters} | \code{list}]\cr
-Either a \code{\link{choice_parameters}} object or a list in optimization
-space as returned by \code{\link{switch_parameter_space}}.}
+\item{logarithm}{[\code{logical(1)}]\cr
+Are the supplied or requested values log-probabilities?}
+
+\item{aggregate}{[\code{character(1)}]\cr
+Probability unit. \code{"occasion"} returns one result per choice occasion.
+\code{"decider"} returns the joint result for each decider's observed sequence of
+choices.}
+
+\item{choice_parameters}{[\code{choice_parameters} | \code{numeric()} | \code{list()}]\cr
+A \code{\link{choice_parameters}} object.
+A numeric vector in optimization space, as created by
+\code{\link{switch_parameter_space}}, is also accepted.}
 
 \item{choice_data}{[\code{choice_data}]\cr
-A \code{\link{choice_data}} object providing responses and covariates.}
+A \code{\link{choice_data}} object.}
 
 \item{choice_effects}{[\code{choice_effects}]\cr
-A \code{\link{choice_effects}} object defining the specification.}
+A \code{\link{choice_effects}} object.}
 
 \item{input_checks}{[\code{logical(1)}]\cr
 Should additional internal input checks be performed before computing the
 probabilities?}
 
-\item{...}{Passed to the underlying probability computation routine.}
+\item{...}{Additional arguments for the probability computation:
+\itemize{
+\item \code{n_draws} [\code{integer(1)}]: The number of draws for simulated
+probabilities, which are required for mixed logit models and for mixed
+probit models with non-normal random effects. The default is \code{200}.
+\item \code{draws} [\code{matrix}]: A matrix of standard normal draws with one column
+per random effect that replaces the generated draws.
+\item \code{cml} [\code{character(1)}]: Composite marginal likelihood for panel probit
+models. Either \code{"no"} (default, the full likelihood), \code{"fp"} (all pairs of
+choice occasions), or \code{"ap"} (adjacent pairs of choice occasions).
+\item \code{ghk_draws} [\code{integer(1)}]: The number of draws of the GHK simulator
+for multivariate normal probabilities in probit models, see
+\code{\link[oeli]{pmvnorm}}. Probabilities of up to three dimensions are
+computed exactly; higher dimensions use the GHK simulator on a fixed
+sequence of quasi-random Halton points. The default is \code{500}.
+}}
 }
 \value{
-A \code{choice_probabilities} S3 object (a data frame) that stores additional
-metadata in attributes such as \code{column_probabilities}, \code{choice_only}, and the
-identifier columns. These attributes are used by downstream helpers to
-reconstruct the original structure.
+A \code{choice_probabilities} tibble with the identifier columns followed by the
+probability column(s). If \code{choice_only = TRUE}, there is a single column
+\code{choice_probability} (or \code{log_choice_probability} if \code{logarithm = TRUE}).
+Otherwise, there is one column per choice alternative. The attributes
+\code{column_decider}, \code{column_occasion}, \code{cross_section},
+\code{column_probabilities}, \code{choice_only}, \code{logarithm}, and \code{aggregate} store
+the column roles and the probability type.
+
+If \code{choice_only = FALSE} and \code{aggregate = "decider"}, the tibble instead has
+one row per possible outcome sequence and decider, with the sequence in the
+list column \code{outcome}.
 }
 \description{
 The \code{choice_probabilities} object defines the choice probabilities.
@@ -77,29 +112,326 @@ on the choice parameters and the choice data.
 }
 }
 \examples{
-data(train_choice)
-choice_effects <- choice_effects(
+### multinomial logit
+set.seed(1)
+effects <- choice_effects(
   choice_formula = choice_formula(
-    formula = choice ~ price | time,
+    formula = choice ~ x + z | 0,
+    error_term = "logit"
+  ),
+  choice_alternatives = choice_alternatives(J = 2)
+)
+parameters <- choice_parameters(beta = c(0.2, -0.1))
+simulated_data <- generate_choice_data(
+  choice_effects = effects,
+  choice_identifiers = generate_choice_identifiers(N = 1L),
+  choice_parameters = parameters
+)
+compute_choice_probabilities(
+  choice_parameters = parameters,
+  choice_data = simulated_data,
+  choice_effects = effects
+)
+
+### multinomial probit
+set.seed(1)
+effects <- choice_effects(
+  choice_formula = choice_formula(
+    formula = choice ~ x + z | 0,
+    error_term = "probit"
+  ),
+  choice_alternatives = choice_alternatives(J = 2)
+)
+parameters <- choice_parameters(
+  beta = c(0.2, -0.1),
+  Sigma = diag(c(0, 1))
+)
+simulated_data <- generate_choice_data(
+  choice_effects = effects,
+  choice_identifiers = generate_choice_identifiers(N = 1L),
+  choice_parameters = parameters
+)
+compute_choice_probabilities(
+  choice_parameters = parameters,
+  choice_data = simulated_data,
+  choice_effects = effects
+)
+
+### ordered logit
+set.seed(1)
+effects <- choice_effects(
+  choice_formula = choice_formula(
+    formula = choice ~ x + z | 0,
+    error_term = "logit"
+  ),
+  choice_alternatives = choice_alternatives(
+    J = 3,
+    ordered = TRUE
+  )
+)
+parameters <- choice_parameters(
+  beta = c(0.2, -0.1),
+  gamma = c(0, 1)
+)
+simulated_data <- generate_choice_data(
+  choice_effects = effects,
+  choice_identifiers = generate_choice_identifiers(N = 1L),
+  choice_parameters = parameters,
+  choice_type = "ordered"
+)
+compute_choice_probabilities(
+  choice_parameters = parameters,
+  choice_data = simulated_data,
+  choice_effects = effects
+)
+
+### ordered probit
+set.seed(1)
+effects <- choice_effects(
+  choice_formula = choice_formula(
+    formula = choice ~ x + z | 0,
     error_term = "probit"
   ),
   choice_alternatives = choice_alternatives(
-    J = 2, alternatives = c("A", "B")
+    J = 3,
+    ordered = TRUE
   )
 )
-choice_parameters <- generate_choice_parameters(choice_effects)
-choice_data <- choice_data(
-  data_frame = train_choice,
-  format = "wide",
-  column_choice = "choice",
-  column_decider = "deciderID",
-  column_occasion = "occasionID"
+parameters <- choice_parameters(
+  beta = c(0.2, -0.1),
+  Sigma = 1,
+  gamma = c(0, 1)
+)
+simulated_data <- generate_choice_data(
+  choice_effects = effects,
+  choice_identifiers = generate_choice_identifiers(N = 1L),
+  choice_parameters = parameters,
+  choice_type = "ordered"
 )
 compute_choice_probabilities(
-  choice_parameters = choice_parameters,
-  choice_data = choice_data,
-  choice_effects = choice_effects,
-  choice_only = TRUE
+  choice_parameters = parameters,
+  choice_data = simulated_data,
+  choice_effects = effects
+)
+
+### ranked logit
+set.seed(1)
+effects <- choice_effects(
+  choice_formula = choice_formula(
+    formula = choice ~ x + z | 0,
+    error_term = "logit"
+  ),
+  choice_alternatives = choice_alternatives(J = 2)
+)
+parameters <- choice_parameters(beta = c(0.2, -0.1))
+simulated_data <- generate_choice_data(
+  choice_effects = effects,
+  choice_identifiers = generate_choice_identifiers(N = 1L),
+  choice_parameters = parameters,
+  choice_type = "ranked"
+)
+compute_choice_probabilities(
+  choice_parameters = parameters,
+  choice_data = simulated_data,
+  choice_effects = effects
+)
+
+### ranked probit
+set.seed(1)
+effects <- choice_effects(
+  choice_formula = choice_formula(
+    formula = choice ~ x + z | 0,
+    error_term = "probit"
+  ),
+  choice_alternatives = choice_alternatives(J = 2)
+)
+parameters <- choice_parameters(
+  beta = c(0.2, -0.1),
+  Sigma = diag(c(0, 1))
+)
+simulated_data <- generate_choice_data(
+  choice_effects = effects,
+  choice_identifiers = generate_choice_identifiers(N = 1L),
+  choice_parameters = parameters,
+  choice_type = "ranked"
+)
+compute_choice_probabilities(
+  choice_parameters = parameters,
+  choice_data = simulated_data,
+  choice_effects = effects
+)
+
+### mixed logit
+set.seed(1)
+effects <- choice_effects(
+  choice_formula = choice_formula(
+    formula = choice ~ x + z | 0,
+    error_term = "logit",
+    random_effects = c(
+      x = "cn",
+      z = "cn"
+    )
+  ),
+  choice_alternatives = choice_alternatives(J = 2)
+)
+parameters <- choice_parameters(
+  beta = c(0.2, -0.1),
+  Omega = matrix(c(0.1, 0.02, 0.02, 0.1), nrow = 2)
+)
+simulated_data <- generate_choice_data(
+  choice_effects = effects,
+  choice_identifiers = generate_choice_identifiers(N = 1L),
+  choice_parameters = parameters
+)
+compute_choice_probabilities(
+  choice_parameters = parameters,
+  choice_data = simulated_data,
+  choice_effects = effects
+)
+
+### mixed probit
+set.seed(1)
+effects <- choice_effects(
+  choice_formula = choice_formula(
+    formula = choice ~ x + z | 0,
+    error_term = "probit",
+    random_effects = c(
+      x = "cn",
+      z = "cn"
+    )
+  ),
+  choice_alternatives = choice_alternatives(J = 2)
+)
+parameters <- choice_parameters(
+  beta = c(0.2, -0.1),
+  Omega = matrix(c(0.1, 0.02, 0.02, 0.1), nrow = 2),
+  Sigma = diag(c(0, 1))
+)
+simulated_data <- generate_choice_data(
+  choice_effects = effects,
+  choice_identifiers = generate_choice_identifiers(N = 1L),
+  choice_parameters = parameters
+)
+compute_choice_probabilities(
+  choice_parameters = parameters,
+  choice_data = simulated_data,
+  choice_effects = effects
+)
+
+### panel logit
+set.seed(1)
+effects <- choice_effects(
+  choice_formula = choice_formula(
+    formula = choice ~ x + z | 0,
+    error_term = "logit",
+    random_effects = c(
+      x = "cn",
+      z = "cn"
+    )
+  ),
+  choice_alternatives = choice_alternatives(J = 2)
+)
+parameters <- choice_parameters(
+  beta = c(0.2, -0.1),
+  Omega = matrix(c(0.1, 0.02, 0.02, 0.1), nrow = 2)
+)
+simulated_data <- generate_choice_data(
+  choice_effects = effects,
+  choice_identifiers = generate_choice_identifiers(
+    N = 1L,
+    Tp = 2L
+  ),
+  choice_parameters = parameters
+)
+compute_choice_probabilities(
+  choice_parameters = parameters,
+  choice_data = simulated_data,
+  choice_effects = effects
+)
+
+### panel probit
+set.seed(1)
+effects <- choice_effects(
+  choice_formula = choice_formula(
+    formula = choice ~ x + z | 0,
+    error_term = "probit",
+    random_effects = c(
+      x = "cn",
+      z = "cn"
+    )
+  ),
+  choice_alternatives = choice_alternatives(J = 2)
+)
+parameters <- choice_parameters(
+  beta = c(0.2, -0.1),
+  Omega = matrix(c(0.1, 0.02, 0.02, 0.1), nrow = 2),
+  Sigma = diag(c(0, 1))
+)
+simulated_data <- generate_choice_data(
+  choice_effects = effects,
+  choice_identifiers = generate_choice_identifiers(
+    N = 1L,
+    Tp = 2L
+  ),
+  choice_parameters = parameters
+)
+compute_choice_probabilities(
+  choice_parameters = parameters,
+  choice_data = simulated_data,
+  choice_effects = effects,
+  aggregate = "decider",
+  cml = "ap"
+)
+
+### latent class logit
+set.seed(1)
+effects <- choice_effects(
+  choice_formula = choice_formula(
+    formula = choice ~ x + z | 0,
+    error_term = "logit",
+    latent_class_effects = c("x", "z")
+  ),
+  choice_alternatives = choice_alternatives(J = 2)
+)
+parameters <- choice_parameters(
+  beta = list(c(0.2, -0.1), c(-0.2, 0.1)),
+  weights = c(0.5, 0.5)
+)
+simulated_data <- generate_choice_data(
+  choice_effects = effects,
+  choice_identifiers = generate_choice_identifiers(N = 1L),
+  choice_parameters = parameters
+)
+compute_choice_probabilities(
+  choice_parameters = parameters,
+  choice_data = simulated_data,
+  choice_effects = effects
+)
+
+### latent class probit
+set.seed(1)
+effects <- choice_effects(
+  choice_formula = choice_formula(
+    formula = choice ~ x + z | 0,
+    error_term = "probit",
+    latent_class_effects = c("x", "z")
+  ),
+  choice_alternatives = choice_alternatives(J = 2)
+)
+parameters <- choice_parameters(
+  beta = list(c(0.2, -0.1), c(-0.2, 0.1)),
+  Sigma = diag(c(0, 1)),
+  weights = c(0.5, 0.5)
+)
+simulated_data <- generate_choice_data(
+  choice_effects = effects,
+  choice_identifiers = generate_choice_identifiers(N = 1L),
+  choice_parameters = parameters
+)
+compute_choice_probabilities(
+  choice_parameters = parameters,
+  choice_data = simulated_data,
+  choice_effects = effects
 )
 }
 \keyword{probability}
